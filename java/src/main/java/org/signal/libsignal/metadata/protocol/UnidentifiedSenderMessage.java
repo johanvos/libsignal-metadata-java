@@ -18,7 +18,7 @@ public class UnidentifiedSenderMessage {
 
   private static final int CIPHERTEXT_VERSION = 1;
 
-  private final int         version;
+  private int         version;
   private final ECPublicKey ephemeral;
   private final byte[]      encryptedStatic;
   private final byte[]      encryptedMessage;
@@ -29,6 +29,11 @@ public class UnidentifiedSenderMessage {
   {
     try {
       this.version = ByteUtil.highBitsToInt(serialized[0]);
+System.err.println("[MD] UnidentifiedSendermsg, version = " + this.version+" and serlength = " + serialized);
+int nr = (int)(Math.random()*1000);
+java.nio.file.Files.write(new java.io.File("/tmp/ser"+nr).toPath(), serialized);
+System.err.println("written to " + nr);
+
 
       if (version > CIPHERTEXT_VERSION) {
         throw new InvalidMetadataVersionException("Unknown version: " + this.version);
@@ -50,6 +55,10 @@ public class UnidentifiedSenderMessage {
     } catch (InvalidProtocolBufferException | InvalidKeyException e) {
       throw new InvalidMetadataMessageException(e);
     }
+    catch (java.io.IOException e) {
+e.printStackTrace();
+      throw new InvalidMetadataMessageException(e);
+}
   }
 
   public UnidentifiedSenderMessage(ECPublicKey ephemeral, byte[] encryptedStatic, byte[] encryptedMessage) {
