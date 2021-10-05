@@ -7,8 +7,8 @@ import org.signal.libsignal.metadata.SignalProtos;
 import org.whispersystems.libsignal.InvalidKeyException;
 import org.whispersystems.libsignal.ecc.Curve;
 import org.whispersystems.libsignal.ecc.ECPublicKey;
-import org.whispersystems.libsignal.util.guava.Optional;
 
+import java.util.Optional;
 
 public class SenderCertificate {
 
@@ -44,8 +44,8 @@ public class SenderCertificate {
 
       this.signer         = new ServerCertificate(certificate.getSigner().toByteArray());
       this.key            = Curve.decodePoint(certificate.getIdentityKey().toByteArray(), 0);
-      this.senderUuid     = certificate.hasSenderUuid() ? Optional.of(certificate.getSenderUuid()) : Optional.<String>absent();
-      this.senderE164     = certificate.hasSenderE164() ? Optional.of(certificate.getSenderE164()) : Optional.<String>absent();
+      this.senderUuid     = certificate.hasSenderUuid() ? Optional.of(certificate.getSenderUuid()) : Optional.<String>empty();
+      this.senderE164     = certificate.hasSenderE164() ? Optional.of(certificate.getSenderE164()) : Optional.<String>empty();
       this.senderDeviceId = certificate.getSenderDevice();
       this.expiration     = certificate.getExpires();
 
@@ -79,7 +79,7 @@ public class SenderCertificate {
   }
 
   public String getSender() {
-    return senderE164.or(senderUuid).orNull();
+    return senderE164.orElse(senderUuid.orElse(null));
   }
 
   public long getExpiration() {
