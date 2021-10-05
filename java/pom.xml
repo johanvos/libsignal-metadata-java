@@ -4,7 +4,7 @@
 
     <groupId>org.signal</groupId>
     <artifactId>signal-metadata-java</artifactId>
-    <version>0.1.2-gluon-3-SNAPSHOT</version>
+    <version>0.1.2-gluon-2</version>
     <packaging>jar</packaging>
 
     <name>signal-metadata-java</name>
