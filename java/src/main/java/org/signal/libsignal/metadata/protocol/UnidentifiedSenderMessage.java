@@ -30,9 +30,9 @@ public class UnidentifiedSenderMessage {
     try {
       this.version = ByteUtil.highBitsToInt(serialized[0]);
 System.err.println("[MD] UnidentifiedSendermsg, version = " + this.version+" and serlength = " + serialized);
-int nr = (int)(Math.random()*1000);
-java.nio.file.Files.write(new java.io.File("/tmp/ser"+nr).toPath(), serialized);
-System.err.println("written to " + nr);
+// int nr = (int)(Math.random()*1000);
+// java.nio.file.Files.write(new java.io.File("/tmp/ser"+nr).toPath(), serialized);
+// System.err.println("written to " + nr);
 
 
       if (version > CIPHERTEXT_VERSION) {

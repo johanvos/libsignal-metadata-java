@@ -134,6 +134,7 @@ public class SealedSessionCipher {
     } catch (InvalidKeyException e) {
       throw new ProtocolInvalidKeyException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
     } catch (NoSessionException e) {
+e.printStackTrace();
       throw new ProtocolNoSessionException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
     } catch (LegacyMessageException e) {
       throw new ProtocolLegacyMessageException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
