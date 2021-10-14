@@ -12,6 +12,7 @@ import org.whispersystems.libsignal.InvalidMessageException;
 import org.whispersystems.libsignal.InvalidVersionException;
 import org.whispersystems.libsignal.ecc.Curve;
 import org.whispersystems.libsignal.ecc.ECPublicKey;
+import org.whispersystems.libsignal.logging.Log;
 import org.whispersystems.libsignal.util.ByteUtil;
 
 public class UnidentifiedSenderMessage {
@@ -23,13 +24,14 @@ public class UnidentifiedSenderMessage {
   private final byte[]      encryptedStatic;
   private final byte[]      encryptedMessage;
   private final byte[]      serialized;
+  private static final String TAG = UnidentifiedSenderMessage.class.getSimpleName();
 
   public UnidentifiedSenderMessage(byte[] serialized)
       throws InvalidMetadataMessageException, InvalidMetadataVersionException
   {
     try {
       this.version = ByteUtil.highBitsToInt(serialized[0]);
-System.err.println("[MD] UnidentifiedSendermsg, version = " + this.version+" and serlength = " + serialized);
+      Log.d(TAG, "[MD] UnidentifiedSendermsg, version = " + this.version+" and serlength = " + serialized);
 // int nr = (int)(Math.random()*1000);
 // java.nio.file.Files.write(new java.io.File("/tmp/ser"+nr).toPath(), serialized);
 // System.err.println("written to " + nr);
