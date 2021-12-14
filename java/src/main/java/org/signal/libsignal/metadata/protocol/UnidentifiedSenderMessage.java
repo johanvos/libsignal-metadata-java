@@ -17,7 +17,7 @@ import org.whispersystems.libsignal.util.ByteUtil;
 
 public class UnidentifiedSenderMessage {
 
-  private static final int CIPHERTEXT_VERSION = 1;
+  private static final int CIPHERTEXT_VERSION = 2;
 
   private int         version;
   private final ECPublicKey ephemeral;
@@ -31,11 +31,14 @@ public class UnidentifiedSenderMessage {
   {
     try {
       this.version = ByteUtil.highBitsToInt(serialized[0]);
-      Log.d(TAG, "[MD] UnidentifiedSendermsg, version = " + this.version+" and serlength = " + serialized);
-// int nr = (int)(Math.random()*1000);
-// java.nio.file.Files.write(new java.io.File("/tmp/ser"+nr).toPath(), serialized);
-// System.err.println("written to " + nr);
-
+        System.err.println("ser[0] = " + serialized[0] + " and ser[1] = " + serialized[1]);
+        Log.d(TAG, "[MD] UnidentifiedSendermsg, version = " + this.version + " and serlength = " + serialized.length);
+   //     int nr = (int) (Math.random() * 1000);
+   //     java.nio.file.Files.write(new java.io.File("/tmp/ser" + nr).toPath(), serialized);
+   //     System.err.println("written to " + nr);
+   //     byte[] ps = new byte[serialized.length - 1];
+    //    System.arraycopy(serialized, 1, ps, 0, serialized.length - 1);
+    //    java.nio.file.Files.write(new java.io.File("/tmp/serps" + nr).toPath(), ps);
 
       if (version > CIPHERTEXT_VERSION) {
         throw new InvalidMetadataVersionException("Unknown version: " + this.version);
@@ -60,7 +63,7 @@ public class UnidentifiedSenderMessage {
     catch (java.io.IOException e) {
 e.printStackTrace();
       throw new InvalidMetadataMessageException(e);
-}
+    }
   }
 
   public UnidentifiedSenderMessage(ECPublicKey ephemeral, byte[] encryptedStatic, byte[] encryptedMessage) {

@@ -43,6 +43,7 @@ import javax.crypto.Mac;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import org.whispersystems.libsignal.state.IdentityKeyStore;
 
 public class SealedSessionCipher {
 
@@ -94,8 +95,15 @@ public class SealedSessionCipher {
       SelfSendException
   {
     UnidentifiedSenderMessageContent content;
-
     try {
+    boolean usenew = false;
+    if (usenew) {
+        content = null;
+              validator.validate(content.getSenderCertificate(), timestamp);
+
+    } else {
+
+
       IdentityKeyPair           ourIdentity    = signalProtocolStore.getIdentityKeyPair();
       UnidentifiedSenderMessage wrapper        = new UnidentifiedSenderMessage(ciphertext);
       byte[]                    ephemeralSalt  = ByteUtil.combine("UnidentifiedDelivery".getBytes(), ourIdentity.getPublicKey().getPublicKey().serialize(), wrapper.getEphemeral().serialize());
@@ -108,12 +116,13 @@ public class SealedSessionCipher {
       byte[]      messageBytes = decrypt(staticKeys.cipherKey, staticKeys.macKey, wrapper.getEncryptedMessage());
 
       content = new UnidentifiedSenderMessageContent(messageBytes);
+            
       validator.validate(content.getSenderCertificate(), timestamp);
 
       if (!MessageDigest.isEqual(content.getSenderCertificate().getKey().serialize(), staticKeyBytes)) {
         throw new InvalidKeyException("Sender's certificate key does not match key used in message");
       }
-
+    }
       boolean isLocalE164 = localE164Address != null && localE164Address.equals(content.getSenderCertificate().getSenderE164().orElse(null));
       boolean isLocalUuid = localUuidAddress != null && localUuidAddress.equals(content.getSenderCertificate().getSenderUuid().orElse(null));
 
@@ -303,5 +312,21 @@ e.printStackTrace();
       this.macKey    = new SecretKeySpec(macKey, "HmacSHA256");
     }
   }
-
+  
+  UnidentifiedSenderMessageContent getNewUsmContent(byte[] ctext, IdentityKeyStore identityStore) throws InvalidMetadataMessageException, InvalidCertificateException {
+   return new UnidentifiedSenderMessageContent(SealedSessionCipher_DecryptToUsmc(ctext, identityStore));   
+  }
+    byte[] SealedSessionCipher_DecryptToUsmc(byte[] ctext, IdentityKeyStore identityStore) {
+        return sealed_sender_decrypt_to_usmc(ctext, identityStore);
+    }
+    
+    private byte[] sealed_sender_decrypt_to_usmc(byte[] ctext, IdentityKeyStore identityStore) {
+       deserialize(ctext);
+        return null;
+    }
+    
+    private void deserialize(byte[] ctext) {
+        
+    }
+    
 }

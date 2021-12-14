@@ -3,4 +3,5 @@ module org.whispersystems.metadata {
     requires org.whispersystems.protocol;
     exports org.signal.libsignal.metadata;
     exports org.signal.libsignal.metadata.certificate;
+    exports org.signal.libsignal.metadata.protocol;
 }
