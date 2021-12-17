@@ -48,6 +48,10 @@ import org.whispersystems.libsignal.state.IdentityKeyStore;
 public class SealedSessionCipher {
 
   private static final String TAG = SealedSessionCipher.class.getSimpleName();
+  
+  static final int MESSAGE_KEY_LEN = 32;
+  static final int AUTH_TAG_LEN = 16;
+  static final int PUBLIC_KEY_LEN = 32;
 
   private final SignalProtocolStore signalProtocolStore;
   private final String              localE164Address;
@@ -95,16 +99,13 @@ public class SealedSessionCipher {
       SelfSendException
   {
     UnidentifiedSenderMessageContent content;
-    try {
-    boolean usenew = false;
-    if (usenew) {
-        content = null;
-              validator.validate(content.getSenderCertificate(), timestamp);
-
-    } else {
-
-
+                 int version = ByteUtil.highBitsToInt(ciphertext[0]);
       IdentityKeyPair           ourIdentity    = signalProtocolStore.getIdentityKeyPair();
+
+    try {
+    if (version ==1) {
+
+
       UnidentifiedSenderMessage wrapper        = new UnidentifiedSenderMessage(ciphertext);
       byte[]                    ephemeralSalt  = ByteUtil.combine("UnidentifiedDelivery".getBytes(), ourIdentity.getPublicKey().getPublicKey().serialize(), wrapper.getEphemeral().serialize());
       EphemeralKeys             ephemeralKeys  = calculateEphemeralKeys(wrapper.getEphemeral(), ourIdentity.getPrivateKey(), ephemeralSalt);
@@ -118,11 +119,32 @@ public class SealedSessionCipher {
       content = new UnidentifiedSenderMessageContent(messageBytes);
             
       validator.validate(content.getSenderCertificate(), timestamp);
-
-      if (!MessageDigest.isEqual(content.getSenderCertificate().getKey().serialize(), staticKeyBytes)) {
+          if (!MessageDigest.isEqual(content.getSenderCertificate().getKey().serialize(), staticKeyBytes)) {
         throw new InvalidKeyException("Sender's certificate key does not match key used in message");
       }
+    
+    } else if (version == 2) {
+        int idx = 1;
+        int msgSize = ciphertext.length - MESSAGE_KEY_LEN - AUTH_TAG_LEN - AUTH_TAG_LEN;
+        byte[] encrypted_message_key = new byte[MESSAGE_KEY_LEN];
+        byte[] encrypted_authentication_tag = new byte[AUTH_TAG_LEN];
+        byte[] ephemeral_public = new byte[PUBLIC_KEY_LEN];
+        byte[] encrypted_message = new byte[msgSize];
+        System.arraycopy(ciphertext, idx, encrypted_message_key, 0, MESSAGE_KEY_LEN);
+        idx = idx + MESSAGE_KEY_LEN;
+        System.arraycopy(ciphertext, idx, encrypted_authentication_tag, 0, AUTH_TAG_LEN);
+        idx = idx + AUTH_TAG_LEN;
+        System.arraycopy(ciphertext, idx, ephemeral_public, 0, PUBLIC_KEY_LEN);
+        idx = idx + PUBLIC_KEY_LEN;
+        System.arraycopy(ciphertext, idx, encrypted_message, 0, msgSize);
+       byte[] m = apply_agreement_xor(ourIdentity, ephemeral_public,
+                Direction.Receiving, encrypted_message_key);
+
+        content = null;
+    } else {
+        throw new IllegalArgumentException ("Can not process UnidentifiedSenderMessage with type "+version);
     }
+  
       boolean isLocalE164 = localE164Address != null && localE164Address.equals(content.getSenderCertificate().getSenderE164().orElse(null));
       boolean isLocalUuid = localUuidAddress != null && localUuidAddress.equals(content.getSenderCertificate().getSenderUuid().orElse(null));
 
@@ -328,5 +350,13 @@ e.printStackTrace();
     private void deserialize(byte[] ctext) {
         
     }
+    byte[] apply_agreement_xor(IdentityKeyPair ourKey, byte[] their_key, Direction direction, byte[] input) {
+        Curve.calculateAgreement(ephemeralPublic, ephemeralPrivate);
+        return null;
+    }
     
+    enum Direction {
+        Sending,
+        Receiving
+    }
 }
