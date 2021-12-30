@@ -1,6 +1,9 @@
 package org.signal.libsignal.metadata;
 
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import org.signal.libsignal.metadata.certificate.CertificateValidator;
 import org.signal.libsignal.metadata.certificate.InvalidCertificateException;
 import org.signal.libsignal.metadata.certificate.SenderCertificate;
@@ -33,6 +36,7 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -43,6 +47,10 @@ import javax.crypto.Mac;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import org.whispersystems.curve25519.java.sc_reduce;
+import org.whispersystems.libsignal.groups.GroupCipher;
+
+import org.whispersystems.libsignal.kdf.HKDF;
 import org.whispersystems.libsignal.state.IdentityKeyStore;
 
 public class SealedSessionCipher {
@@ -52,7 +60,9 @@ public class SealedSessionCipher {
   static final int MESSAGE_KEY_LEN = 32;
   static final int AUTH_TAG_LEN = 16;
   static final int PUBLIC_KEY_LEN = 32;
-
+  static final String LABEL_R = "Sealed Sender v2: r";
+  static final String LABEL_K = "Sealed Sender v2: K";
+  
   private final SignalProtocolStore signalProtocolStore;
   private final String              localE164Address;
   private final String              localUuidAddress;
@@ -88,7 +98,11 @@ public class SealedSessionCipher {
 
     return new UnidentifiedSenderMessage(ephemeral.getPublicKey(), staticKeyCiphertext, messageBytes).getSerialized();
   }
-
+  public byte[] encrypt(SignalProtocolAddress destinationAddress, UnidentifiedSenderMessageContent content)
+      throws InvalidKeyException, UntrustedIdentityException
+  { throw new RuntimeException("IMPLEMENT THIS NOW!");
+  }
+  
   public DecryptionResult decrypt(CertificateValidator validator, byte[] ciphertext, long timestamp)
       throws
       InvalidMetadataMessageException, InvalidMetadataVersionException,
@@ -96,7 +110,7 @@ public class SealedSessionCipher {
       ProtocolNoSessionException, ProtocolLegacyMessageException,
       ProtocolInvalidVersionException, ProtocolDuplicateMessageException,
       ProtocolInvalidKeyIdException, ProtocolUntrustedIdentityException,
-      SelfSendException
+      SelfSendException 
   {
     UnidentifiedSenderMessageContent content;
                  int version = ByteUtil.highBitsToInt(ciphertext[0]);
@@ -124,27 +138,52 @@ public class SealedSessionCipher {
       }
     
     } else if (version == 2) {
+        int rnd = (int)(Math.random()* 10000);
         int idx = 1;
-        int msgSize = ciphertext.length - MESSAGE_KEY_LEN - AUTH_TAG_LEN - AUTH_TAG_LEN;
+        int msgSize = ciphertext.length - MESSAGE_KEY_LEN - AUTH_TAG_LEN - PUBLIC_KEY_LEN -1;
+        try {
+            Files.write(new File("/tmp/ct"+rnd).toPath(), ciphertext);
+            Files.write(new File("/tmp/prk"+rnd).toPath(), ourIdentity.getPrivateKey().serialize());
+            Files.write(new File("/tmp/puk"+rnd).toPath(), ourIdentity.getPublicKey().serialize());
+
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+        ourIdentity.getPrivateKey().serialize();
         byte[] encrypted_message_key = new byte[MESSAGE_KEY_LEN];
         byte[] encrypted_authentication_tag = new byte[AUTH_TAG_LEN];
-        byte[] ephemeral_public = new byte[PUBLIC_KEY_LEN];
+        byte[] theirPublicKey = new byte[1+PUBLIC_KEY_LEN];
+        theirPublicKey[0] = 0x5;
         byte[] encrypted_message = new byte[msgSize];
         System.arraycopy(ciphertext, idx, encrypted_message_key, 0, MESSAGE_KEY_LEN);
         idx = idx + MESSAGE_KEY_LEN;
         System.arraycopy(ciphertext, idx, encrypted_authentication_tag, 0, AUTH_TAG_LEN);
         idx = idx + AUTH_TAG_LEN;
-        System.arraycopy(ciphertext, idx, ephemeral_public, 0, PUBLIC_KEY_LEN);
+        System.arraycopy(ciphertext, idx, theirPublicKey, 1, PUBLIC_KEY_LEN);
         idx = idx + PUBLIC_KEY_LEN;
         System.arraycopy(ciphertext, idx, encrypted_message, 0, msgSize);
-       byte[] m = apply_agreement_xor(ourIdentity, ephemeral_public,
-                Direction.Receiving, encrypted_message_key);
+        
+        IdentityKeyPair ik = signalProtocolStore.getIdentityKeyPair();
 
-        content = null;
+        ECPublicKey theirPubKey = Curve.decodePoint(theirPublicKey,0);
+        byte[] answer = apply_agreement_xor(ik, theirPubKey, false, encrypted_message_key);
+        System.err.println("agreement = "+ answer);
+          DerivedKeys keys = calculateDerivedKeys(answer);
+        ECPublicKey calced = Curve.createPublicKeyFromPrivateKey(keys.e.serialize());
+        byte[] nonce = new byte[12];
+        try {
+        Cipher cipher = Cipher.getInstance("AES/GCM-SIV/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keys.k, "AES"), new IvParameterSpec(nonce));
+        byte[] messageBytes = cipher.doFinal(encrypted_message);
+        
+         content = new UnidentifiedSenderMessageContent(messageBytes);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new IllegalArgumentException("bummer: "+e);
+        }
     } else {
         throw new IllegalArgumentException ("Can not process UnidentifiedSenderMessage with type "+version);
     }
-  
       boolean isLocalE164 = localE164Address != null && localE164Address.equals(content.getSenderCertificate().getSenderE164().orElse(null));
       boolean isLocalUuid = localUuidAddress != null && localUuidAddress.equals(content.getSenderCertificate().getSenderUuid().orElse(null));
 
@@ -166,7 +205,7 @@ public class SealedSessionCipher {
       throw new ProtocolInvalidKeyException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
     } catch (NoSessionException e) {
 e.printStackTrace();
-      throw new ProtocolNoSessionException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
+      throw new ProtocolNoSessionException(e, content);
     } catch (LegacyMessageException e) {
       throw new ProtocolLegacyMessageException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
     } catch (InvalidVersionException e) {
@@ -220,6 +259,7 @@ e.printStackTrace();
     switch (message.getType()) {
       case CiphertextMessage.WHISPER_TYPE: return new SessionCipher(signalProtocolStore, sender).decrypt(new SignalMessage(message.getContent()));
       case CiphertextMessage.PREKEY_TYPE:  return new SessionCipher(signalProtocolStore, sender).decrypt(new PreKeySignalMessage(message.getContent()));
+      case CiphertextMessage.SENDERKEY_TYPE: return new GroupCipher(signalProtocolStore, sender).decrypt(message.getContent());
       default:                             throw new InvalidMessageException("Unknown type: " + message.getType());
     }
   }
@@ -350,9 +390,75 @@ e.printStackTrace();
     private void deserialize(byte[] ctext) {
         
     }
-    byte[] apply_agreement_xor(IdentityKeyPair ourKey, byte[] their_key, Direction direction, byte[] input) {
-        Curve.calculateAgreement(ephemeralPublic, ephemeralPrivate);
-        return null;
+static byte[] apply_agreement_xor(IdentityKeyPair ourKeyPair, ECPublicKey theirPublicKey, 
+            boolean direction, byte[] input) throws InvalidKeyException {
+      byte[] agreementKeyInput = createAgreementKeyInput(ourKeyPair,theirPublicKey,direction, input);
+      HKDF hkdf = HKDFv3.createFor(3);
+      byte[] secrets = hkdf.deriveSecrets(agreementKeyInput, "Sealed Sender v2: DH".getBytes(), MESSAGE_KEY_LEN);
+      System.err.println("DeriveSecrets = "+ Arrays.toString(secrets));
+      for (int i = 0; i < input.length; i++) {
+          secrets[i] = (byte) (secrets[i] ^ input[i]);
+      }
+      System.err.println("And agreement = "+ Arrays.toString(secrets));
+      return secrets;
+    }
+    
+    static byte[] createAgreementKeyInput(IdentityKeyPair ourKeyPair, ECPublicKey theirPublicKey, 
+            boolean direction, byte[] input) throws InvalidKeyException {
+        byte[] answer = new byte[0];
+        byte[] agreement = Curve.calculateAgreement(theirPublicKey, ourKeyPair.getPrivateKey());
+        byte[] theirpubkey = theirPublicKey.serialize();
+        byte[] ourpubkey = ourKeyPair.getPublicKey().serialize();
+        int alen = agreement.length + theirpubkey.length + ourpubkey.length;
+        int theirPubKeyLen = theirpubkey.length;
+        int ourPubKeyLen = ourpubkey.length;
+        int agreementLen = agreement.length;
+        byte[] agreementKeyInput = new byte[alen];
+        System.arraycopy(agreement, 0, agreementKeyInput, 0, agreementLen);
+        if (direction) {
+            System.arraycopy(ourpubkey, 0, agreementKeyInput, agreementLen, ourPubKeyLen);
+            System.arraycopy(theirpubkey, 0, agreementKeyInput, agreementLen +ourPubKeyLen , theirPubKeyLen);
+        } else {
+            System.arraycopy(theirpubkey, 0, agreementKeyInput, agreementLen, theirPubKeyLen);
+            System.arraycopy(ourpubkey, 0, agreementKeyInput, agreementLen+ theirPubKeyLen, ourPubKeyLen);
+        }
+//        System.err.println("Ag length = " + agreement.length);
+//        System.err.println("pk length = " + theirpubkey.length);
+//        System.err.println("opk length = " + ourpubkey.length);
+//        System.err.println("agreement_key_input = "+ Arrays.toString(agreementKeyInput));
+        return agreementKeyInput;
+    }
+      
+    static byte[] reduce(byte[] s) {
+        if (s.length != 64) throw new IllegalArgumentException ("Length of input should be 64 bytes but was "+s.length);
+        byte[] copy = new byte[s.length];
+        System.arraycopy(s, 0, copy, 0, s.length);
+        sc_reduce.sc_reduce(copy);
+        byte[] answer = new byte[32];
+        System.arraycopy(copy, 0, answer, 0, 32);
+        return answer;
+    }
+
+    static DerivedKeys calculateDerivedKeys(byte[] m) {
+        HKDF kdf = HKDF.createFor(3);
+        byte[] r = kdf.deriveSecrets(m, LABEL_R.getBytes(), 64);
+        byte[] k = kdf.deriveSecrets(m, LABEL_K.getBytes(), 32);
+        byte[] reduced = reduce(r);
+        reduced[0] &= 0xF8;
+        reduced[31] &= 0x7F;
+        reduced[31] |= 0x40;
+        DerivedKeys answer = new DerivedKeys(Curve.decodePrivatePoint(reduced),k);
+        return answer;
+    }
+    
+    static class DerivedKeys {
+        ECPrivateKey e;
+        byte[] k;
+        
+        DerivedKeys(ECPrivateKey key, byte[] box) {
+            this.e = key;
+            this.k = box;
+        }
     }
     
     enum Direction {
