@@ -1,9 +1,5 @@
 package org.signal.libsignal.metadata;
 
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import org.signal.libsignal.metadata.certificate.CertificateValidator;
 import org.signal.libsignal.metadata.certificate.InvalidCertificateException;
 import org.signal.libsignal.metadata.certificate.SenderCertificate;
@@ -37,6 +33,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -52,6 +49,7 @@ import org.whispersystems.libsignal.groups.GroupCipher;
 
 import org.whispersystems.libsignal.kdf.HKDF;
 import org.whispersystems.libsignal.state.IdentityKeyStore;
+import org.whispersystems.libsignal.state.SessionRecord;
 
 public class SealedSessionCipher {
 
@@ -82,6 +80,7 @@ public class SealedSessionCipher {
   public byte[] encrypt(SignalProtocolAddress destinationAddress, SenderCertificate senderCertificate, byte[] paddedPlaintext)
       throws InvalidKeyException, UntrustedIdentityException
   {
+      Thread.dumpStack();
     CiphertextMessage message       = new SessionCipher(signalProtocolStore, destinationAddress).encrypt(paddedPlaintext);
     IdentityKeyPair   ourIdentity   = signalProtocolStore.getIdentityKeyPair();
     ECPublicKey       theirIdentity = signalProtocolStore.getIdentity(destinationAddress).getPublicKey();
@@ -98,9 +97,34 @@ public class SealedSessionCipher {
 
     return new UnidentifiedSenderMessage(ephemeral.getPublicKey(), staticKeyCiphertext, messageBytes).getSerialized();
   }
+  
   public byte[] encrypt(SignalProtocolAddress destinationAddress, UnidentifiedSenderMessageContent content)
       throws InvalidKeyException, UntrustedIdentityException
-  { throw new RuntimeException("IMPLEMENT THIS NOW!");
+  { 
+      Thread.dumpStack();
+    IdentityKeyPair   ourIdentity   = signalProtocolStore.getIdentityKeyPair();
+    ECPublicKey       theirIdentity = signalProtocolStore.getIdentity(destinationAddress).getPublicKey();
+
+    ECKeyPair     ephemeral           = Curve.generateKeyPair();
+    byte[]        ephemeralSalt       = ByteUtil.combine("UnidentifiedDelivery".getBytes(), theirIdentity.serialize(), ephemeral.getPublicKey().serialize());
+    EphemeralKeys ephemeralKeys       = calculateEphemeralKeys(theirIdentity, ephemeral.getPrivateKey(), ephemeralSalt);
+    byte[]        staticKeyCiphertext = encrypt(ephemeralKeys.cipherKey, ephemeralKeys.macKey, ourIdentity.getPublicKey().getPublicKey().serialize());
+
+    byte[]                           staticSalt   = ByteUtil.combine(ephemeralKeys.chainKey, staticKeyCiphertext);
+    StaticKeys                       staticKeys   = calculateStaticKeys(theirIdentity, ourIdentity.getPrivateKey(), staticSalt);
+    byte[]                           messageBytes = encrypt(staticKeys.cipherKey, staticKeys.macKey, content.getSerialized());
+//    byte[] answer = new byte[messageBytes.length+1];
+//    System.arraycopy(messageBytes, 0, answer, 1, messageBytes.length);
+    byte[] messageData = new byte[messageBytes.length];
+    UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(theirIdentity, staticKeyCiphertext, messageBytes);
+    
+      byte[] serialized = pb.getSerialized();
+      byte[] answer = new byte[serialized.length+1];
+    System.arraycopy(serialized, 0, answer, 1, serialized.length);
+ //   answer = new byte[2];
+    answer[0] = 1 | (1 <<4);
+      System.err.println("SSC, encrypted has " + answer.length+" bytes and = "+Arrays.toString(answer));
+    return answer;
   }
   
   public DecryptionResult decrypt(CertificateValidator validator, byte[] ciphertext, long timestamp)
@@ -112,6 +136,7 @@ public class SealedSessionCipher {
       ProtocolInvalidKeyIdException, ProtocolUntrustedIdentityException,
       SelfSendException 
   {
+      System.err.println("SealedSessionCipher, decrypt, length = " + ciphertext.length+" and content = "+ Arrays.toString(ciphertext));
     UnidentifiedSenderMessageContent content;
                  int version = ByteUtil.highBitsToInt(ciphertext[0]);
       IdentityKeyPair           ourIdentity    = signalProtocolStore.getIdentityKeyPair();
@@ -141,14 +166,14 @@ public class SealedSessionCipher {
         int rnd = (int)(Math.random()* 10000);
         int idx = 1;
         int msgSize = ciphertext.length - MESSAGE_KEY_LEN - AUTH_TAG_LEN - PUBLIC_KEY_LEN -1;
-        try {
-            Files.write(new File("/tmp/ct"+rnd).toPath(), ciphertext);
-            Files.write(new File("/tmp/prk"+rnd).toPath(), ourIdentity.getPrivateKey().serialize());
-            Files.write(new File("/tmp/puk"+rnd).toPath(), ourIdentity.getPublicKey().serialize());
-
-        } catch (IOException ex) {
-            ex.printStackTrace();
-        }
+//        try {
+//            Files.write(new File("/tmp/ct"+rnd).toPath(), ciphertext);
+//            Files.write(new File("/tmp/prk"+rnd).toPath(), ourIdentity.getPrivateKey().serialize());
+//            Files.write(new File("/tmp/puk"+rnd).toPath(), ourIdentity.getPublicKey().serialize());
+//
+//        } catch (IOException ex) {
+//            ex.printStackTrace();
+//        }
         ourIdentity.getPrivateKey().serialize();
         byte[] encrypted_message_key = new byte[MESSAGE_KEY_LEN];
         byte[] encrypted_authentication_tag = new byte[AUTH_TAG_LEN];
@@ -163,11 +188,12 @@ public class SealedSessionCipher {
         idx = idx + PUBLIC_KEY_LEN;
         System.arraycopy(ciphertext, idx, encrypted_message, 0, msgSize);
         
+        System.err.println("first byte encryptedMessage = " + encrypted_message[0]+" at position "+idx);
+
         IdentityKeyPair ik = signalProtocolStore.getIdentityKeyPair();
 
         ECPublicKey theirPubKey = Curve.decodePoint(theirPublicKey,0);
         byte[] answer = apply_agreement_xor(ik, theirPubKey, false, encrypted_message_key);
-        System.err.println("agreement = "+ answer);
           DerivedKeys keys = calculateDerivedKeys(answer);
         ECPublicKey calced = Curve.createPublicKeyFromPrivateKey(keys.e.serialize());
         byte[] nonce = new byte[12];
@@ -175,7 +201,8 @@ public class SealedSessionCipher {
         Cipher cipher = Cipher.getInstance("AES/GCM-SIV/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keys.k, "AES"), new IvParameterSpec(nonce));
         byte[] messageBytes = cipher.doFinal(encrypted_message);
-        
+        System.err.println("First byte messageBytes = " + messageBytes[0]);
+
          content = new UnidentifiedSenderMessageContent(messageBytes);
         } catch (Exception e) {
             e.printStackTrace();
@@ -198,6 +225,7 @@ public class SealedSessionCipher {
       return new DecryptionResult(content.getSenderCertificate().getSenderUuid(),
                                   content.getSenderCertificate().getSenderE164(),
                                   content.getSenderCertificate().getSenderDeviceId(),
+              content.getGroupId(),
                                   decrypt(content));
     } catch (InvalidMessageException e) {
       throw new ProtocolInvalidMessageException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
@@ -217,6 +245,49 @@ e.printStackTrace();
     } catch (UntrustedIdentityException e) {
       throw new ProtocolUntrustedIdentityException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
     }
+  }
+  public byte[] multiRecipientEncrypt(List<SignalProtocolAddress> recipients, UnidentifiedSenderMessageContent content)
+      throws
+      InvalidKeyException, NoSessionException,
+      UntrustedIdentityException//, InvalidRegistrationIdException
+  {
+      return new byte[0];
+//    List<SessionRecord> recipientSessions =
+//      this.signalProtocolStore.loadExistingSessions(recipients);
+//
+//    // Unsafely access the native handles for the recipients and sessions,
+//    // because try-with-resources syntax doesn't support a List of resources.
+//    long[] recipientHandles = new long[recipients.size()];
+//    int i = 0;
+//    for (SignalProtocolAddress nextRecipient : recipients) {
+//      recipientHandles[i] = nextRecipient.unsafeNativeHandleWithoutGuard();
+//      i++;
+//    }   
+//
+//    long[] recipientSessionHandles = new long[recipientSessions.size()];
+//    i = 0;
+//    for (SessionRecord nextSession : recipientSessions) {
+//      recipientSessionHandles[i] = nextSession.unsafeNativeHandleWithoutGuard();
+//      i++;
+//    }   
+//
+//    try (NativeHandleGuard contentGuard = new NativeHandleGuard(content)) {
+//      byte[] result = Native.SealedSessionCipher_MultiRecipientEncrypt(
+//        recipientHandles,
+//        recipientSessionHandles,
+//        contentGuard.nativeHandle(),
+//        this.signalProtocolStore,
+//        null);
+//      // Manually keep the lists of recipients and sessions from being garbage collected
+//      // while we're using their native handles.
+//      Native.keepAlive(recipients);
+//      Native.keepAlive(recipientSessions);
+//      return result;
+//    }   
+  }
+  
+  static byte[] multiRecipientMessageForSingleRecipient(byte[] message) {
+    return new byte[0];
   }
 
   public int getSessionVersion(SignalProtocolAddress remoteAddress) {
@@ -255,7 +326,7 @@ e.printStackTrace();
       throws InvalidVersionException, InvalidMessageException, InvalidKeyException, DuplicateMessageException, InvalidKeyIdException, UntrustedIdentityException, LegacyMessageException, NoSessionException
   {
     SignalProtocolAddress sender = getPreferredAddress(signalProtocolStore, message.getSenderCertificate());
-
+      System.err.println("SSC, decrypt USMC, type = "+message.getType());
     switch (message.getType()) {
       case CiphertextMessage.WHISPER_TYPE: return new SessionCipher(signalProtocolStore, sender).decrypt(new SignalMessage(message.getContent()));
       case CiphertextMessage.PREKEY_TYPE:  return new SessionCipher(signalProtocolStore, sender).decrypt(new PreKeySignalMessage(message.getContent()));
@@ -327,12 +398,15 @@ e.printStackTrace();
     private final Optional<String> senderUuid;
     private final Optional<String> senderE164;
     private final int              deviceId;
+    private final Optional<byte[]> groupId;
     private final byte[]           paddedMessage;
 
-    private DecryptionResult(Optional<String> senderUuid, Optional<String> senderE164, int deviceId, byte[] paddedMessage) {
+    private DecryptionResult(Optional<String> senderUuid, Optional<String> senderE164,
+            int deviceId, Optional<byte[]> groupId, byte[] paddedMessage) {
       this.senderUuid    = senderUuid;
       this.senderE164    = senderE164;
       this.deviceId      = deviceId;
+      this.groupId       = groupId;
       this.paddedMessage = paddedMessage;
     }
 
@@ -351,6 +425,11 @@ e.printStackTrace();
     public byte[] getPaddedMessage() {
       return paddedMessage;
     }
+    
+    public Optional<byte[]> getGroupId() {
+      return groupId;
+    }
+
   }
 
   private static class EphemeralKeys {
@@ -390,17 +469,16 @@ e.printStackTrace();
     private void deserialize(byte[] ctext) {
         
     }
-static byte[] apply_agreement_xor(IdentityKeyPair ourKeyPair, ECPublicKey theirPublicKey, 
+    
+    static byte[] apply_agreement_xor(IdentityKeyPair ourKeyPair, ECPublicKey theirPublicKey,
             boolean direction, byte[] input) throws InvalidKeyException {
-      byte[] agreementKeyInput = createAgreementKeyInput(ourKeyPair,theirPublicKey,direction, input);
-      HKDF hkdf = HKDFv3.createFor(3);
-      byte[] secrets = hkdf.deriveSecrets(agreementKeyInput, "Sealed Sender v2: DH".getBytes(), MESSAGE_KEY_LEN);
-      System.err.println("DeriveSecrets = "+ Arrays.toString(secrets));
-      for (int i = 0; i < input.length; i++) {
-          secrets[i] = (byte) (secrets[i] ^ input[i]);
-      }
-      System.err.println("And agreement = "+ Arrays.toString(secrets));
-      return secrets;
+        byte[] agreementKeyInput = createAgreementKeyInput(ourKeyPair, theirPublicKey, direction, input);
+        HKDF hkdf = HKDFv3.createFor(3);
+        byte[] secrets = hkdf.deriveSecrets(agreementKeyInput, "Sealed Sender v2: DH".getBytes(), MESSAGE_KEY_LEN);
+        for (int i = 0; i < input.length; i++) {
+            secrets[i] = (byte) (secrets[i] ^ input[i]);
+        }
+        return secrets;
     }
     
     static byte[] createAgreementKeyInput(IdentityKeyPair ourKeyPair, ECPublicKey theirPublicKey, 
@@ -422,10 +500,6 @@ static byte[] apply_agreement_xor(IdentityKeyPair ourKeyPair, ECPublicKey theirP
             System.arraycopy(theirpubkey, 0, agreementKeyInput, agreementLen, theirPubKeyLen);
             System.arraycopy(ourpubkey, 0, agreementKeyInput, agreementLen+ theirPubKeyLen, ourPubKeyLen);
         }
-//        System.err.println("Ag length = " + agreement.length);
-//        System.err.println("pk length = " + theirpubkey.length);
-//        System.err.println("opk length = " + ourpubkey.length);
-//        System.err.println("agreement_key_input = "+ Arrays.toString(agreementKeyInput));
         return agreementKeyInput;
     }
       
