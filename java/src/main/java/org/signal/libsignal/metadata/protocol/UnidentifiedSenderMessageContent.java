@@ -29,7 +29,7 @@ public class UnidentifiedSenderMessageContent {
   public UnidentifiedSenderMessageContent(byte[] serialized) throws InvalidMetadataMessageException, InvalidCertificateException {
     try {
       SignalProtos.UnidentifiedSenderMessage.Message message = SignalProtos.UnidentifiedSenderMessage.Message.parseFrom(serialized);
-
+        System.err.println("hastype = "+message.hasType()+" type = " + message.getType());
       if (!message.hasType() || !message.hasSenderCertificate() || !message.hasContent()) {
         throw new InvalidMetadataMessageException("Missing fields");
       }
@@ -56,24 +56,36 @@ public class UnidentifiedSenderMessageContent {
                                           int contentHint,
                                           Optional<byte[]> groupId) {
       try {
-          this.serialized = SignalProtos.UnidentifiedSenderMessage.Message.newBuilder()
+          System.err.println("messagetype = "+message.getType()+" and poto  = "+getProtoType(message.getType()));
+          SignalProtos.UnidentifiedSenderMessage.Message.Builder builder = SignalProtos.UnidentifiedSenderMessage.Message.newBuilder()
                   .setSenderCertificate(SignalProtos.SenderCertificate.parseFrom(senderCertificate.getSerialized()))
                   .setContent(ByteString.copyFrom(message.serialize()))
-                  .setContentHint(ContentHint.forNumber(contentHint))
-                  .setGroupId(ByteString.copyFrom(groupId.get())).build().toByteArray();
+                  .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.forNumber(message.getType()))
+                  .setGroupId(ByteString.copyFrom(groupId.get()));
+          if (contentHint > 0) {
+              builder.setContentHint(ContentHint.forNumber(contentHint));
+
+          }
+          this.serialized = builder.build().toByteArray();
+
       } catch (InvalidProtocolBufferException ex) {
           ex.printStackTrace();
           throw new RuntimeException(ex);
       }
+      this.type = message.getType();
       this.senderCertificate = senderCertificate;
       this.content = message.serialize();
       this.groupId = groupId;     
+      this.contentHint = contentHint;
   }
   
   public UnidentifiedSenderMessageContent(int type, SenderCertificate senderCertificate, byte[] content) {
     try {
+        System.err.println("TYPE = "+type);
+        System.err.println("congerted into "+getProtoType(type));
       this.serialized = SignalProtos.UnidentifiedSenderMessage.Message.newBuilder()
-                                                                      .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.valueOf(getProtoType(type)))
+              .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.valueOf(getProtoType(type)))                 
+           //   .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.forNumber(type))
                                                                       .setSenderCertificate(SignalProtos.SenderCertificate.parseFrom(senderCertificate.getSerialized()))
                                                                       .setContent(ByteString.copyFrom(content))
                                                                       .build()
@@ -112,12 +124,15 @@ public class UnidentifiedSenderMessageContent {
     switch (type) {
       case CiphertextMessage.WHISPER_TYPE: return SignalProtos.UnidentifiedSenderMessage.Message.Type.MESSAGE_VALUE;
       case CiphertextMessage.PREKEY_TYPE:  return SignalProtos.UnidentifiedSenderMessage.Message.Type.PREKEY_MESSAGE_VALUE;
+      case CiphertextMessage.SENDERKEY_TYPE:  return SignalProtos.UnidentifiedSenderMessage.Message.Type.SENDERKEY_MESSAGE_VALUE;
+      case CiphertextMessage.PLAINTEXT_CONTENT_TYPE:  return SignalProtos.UnidentifiedSenderMessage.Message.Type.PLAINTEXT_CONTENT_VALUE;
+
       default:                             throw new AssertionError(type);
     }
   }
 
     public int getContentHint() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        return this.contentHint;
     }
 
 }
