@@ -3,6 +3,7 @@ package org.signal.libsignal.metadata.protocol;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
+import java.util.Arrays;
 
 import org.signal.libsignal.metadata.InvalidMetadataMessageException;
 import org.signal.libsignal.metadata.InvalidMetadataVersionException;
@@ -71,7 +72,10 @@ e.printStackTrace();
     this.ephemeral        = ephemeral;
     this.encryptedStatic  = encryptedStatic;
     this.encryptedMessage = encryptedMessage;
-
+      System.err.println("USM constructor. Version = "+this.version);
+      System.err.println("USM constructor, ephemeral = "+Arrays.toString(ephemeral.serialize()));
+      System.err.println("USM constructor, encryptedMessage = "+Arrays.toString(encryptedMessage));
+      System.err.println("USM constructor, encryptedStatic = "+Arrays.toString(encryptedStatic));
     byte[] versionBytes = {ByteUtil.intsToByteHighAndLow(CIPHERTEXT_VERSION, CIPHERTEXT_VERSION)};
     byte[] messageBytes = SignalProtos.UnidentifiedSenderMessage.newBuilder()
                                                                 .setEncryptedMessage(ByteString.copyFrom(encryptedMessage))

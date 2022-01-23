@@ -57,10 +57,11 @@ public class UnidentifiedSenderMessageContent {
                                           Optional<byte[]> groupId) {
       try {
           System.err.println("messagetype = "+message.getType()+" and poto  = "+getProtoType(message.getType()));
+          int protoType = getProtoType(message.getType());
           SignalProtos.UnidentifiedSenderMessage.Message.Builder builder = SignalProtos.UnidentifiedSenderMessage.Message.newBuilder()
                   .setSenderCertificate(SignalProtos.SenderCertificate.parseFrom(senderCertificate.getSerialized()))
                   .setContent(ByteString.copyFrom(message.serialize()))
-                  .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.forNumber(message.getType()))
+                  .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.forNumber(protoType))
                   .setGroupId(ByteString.copyFrom(groupId.get()));
           if (contentHint > 0) {
               builder.setContentHint(ContentHint.forNumber(contentHint));

@@ -51,6 +51,7 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.whispersystems.curve25519.java.sc_reduce;
 import org.whispersystems.libsignal.IdentityKey;
+import org.whispersystems.libsignal.InvalidRegistrationIdException;
 import org.whispersystems.libsignal.groups.GroupCipher;
 
 import org.whispersystems.libsignal.kdf.HKDF;
@@ -106,10 +107,10 @@ public class SealedSessionCipher {
 
     public byte[] encrypt(SignalProtocolAddress destinationAddress, UnidentifiedSenderMessageContent content)
             throws InvalidKeyException, UntrustedIdentityException {
-        Thread.dumpStack();
+        System.err.println("SSC, encrypt usmc for type = "+content.getType());
         IdentityKeyPair ourIdentity = signalProtocolStore.getIdentityKeyPair();
         ECPublicKey theirIdentity = signalProtocolStore.getIdentity(destinationAddress).getPublicKey();
-
+        System.err.println("SSC, ourIdentity = "+ ourIdentity);
         ECKeyPair ephemeral = Curve.generateKeyPair();
         byte[] ephemeralSalt = ByteUtil.combine("UnidentifiedDelivery".getBytes(), theirIdentity.serialize(), ephemeral.getPublicKey().serialize());
         EphemeralKeys ephemeralKeys = calculateEphemeralKeys(theirIdentity, ephemeral.getPrivateKey(), ephemeralSalt);
@@ -118,18 +119,14 @@ public class SealedSessionCipher {
         byte[] staticSalt = ByteUtil.combine(ephemeralKeys.chainKey, staticKeyCiphertext);
         StaticKeys staticKeys = calculateStaticKeys(theirIdentity, ourIdentity.getPrivateKey(), staticSalt);
         byte[] messageBytes = encrypt(staticKeys.cipherKey, staticKeys.macKey, content.getSerialized());
-//    byte[] answer = new byte[messageBytes.length+1];
-//    System.arraycopy(messageBytes, 0, answer, 1, messageBytes.length);
+
         byte[] messageData = new byte[messageBytes.length];
         UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(theirIdentity, staticKeyCiphertext, messageBytes);
 
         byte[] serialized = pb.getSerialized();
-        byte[] answer = new byte[serialized.length + 1];
-        System.arraycopy(serialized, 0, answer, 1, serialized.length);
-        //   answer = new byte[2];
-        answer[0] = 1 | (1 << 4);
-        System.err.println("SSC, encrypted has " + answer.length + " bytes and = " + Arrays.toString(answer));
-        return answer;
+        System.err.println("SSC, encrypted has " + serialized.length + " bytes and = " + Arrays.toString(serialized));
+        return serialized;
+
     }
 
     public DecryptionResult decrypt(CertificateValidator validator, byte[] ciphertext, long timestamp)
@@ -151,14 +148,16 @@ public class SealedSessionCipher {
 
                 UnidentifiedSenderMessage wrapper = new UnidentifiedSenderMessage(ciphertext);
                 byte[] ephemeralSalt = ByteUtil.combine("UnidentifiedDelivery".getBytes(), ourIdentity.getPublicKey().getPublicKey().serialize(), wrapper.getEphemeral().serialize());
+                System.err.println("[SSC] decrypt, esalt = "+Arrays.toString(ephemeralSalt));
                 EphemeralKeys ephemeralKeys = calculateEphemeralKeys(wrapper.getEphemeral(), ourIdentity.getPrivateKey(), ephemeralSalt);
                 byte[] staticKeyBytes = decrypt(ephemeralKeys.cipherKey, ephemeralKeys.macKey, wrapper.getEncryptedStatic());
-
+                System.err.println("[SSC] staticKeybytes = " + Arrays.toString(staticKeyBytes));
                 ECPublicKey staticKey = Curve.decodePoint(staticKeyBytes, 0);
                 byte[] staticSalt = ByteUtil.combine(ephemeralKeys.chainKey, wrapper.getEncryptedStatic());
+                System.err.println("[SSC] staticSalt = "+ Arrays.toString(staticSalt));
                 StaticKeys staticKeys = calculateStaticKeys(staticKey, ourIdentity.getPrivateKey(), staticSalt);
                 byte[] messageBytes = decrypt(staticKeys.cipherKey, staticKeys.macKey, wrapper.getEncryptedMessage());
-
+                System.err.println("[SSC] mB = "+Arrays.toString(messageBytes));
                 content = new UnidentifiedSenderMessageContent(messageBytes);
 
                 validator.validate(content.getSenderCertificate(), timestamp);
@@ -251,7 +250,7 @@ public class SealedSessionCipher {
     public byte[] multiRecipientEncrypt(List<SignalProtocolAddress> destinations, UnidentifiedSenderMessageContent usmc)
             throws
             InvalidKeyException, NoSessionException,
-            UntrustedIdentityException //, InvalidRegistrationIdException
+            UntrustedIdentityException, InvalidRegistrationIdException
     {
      //   System.err.println("MRE, umc = "+ Arrays.toString(usmc.getSerialized()));
         System.err.println("MRE, type = " + usmc.getType());
@@ -261,10 +260,8 @@ public class SealedSessionCipher {
             baos.write(versionByte);
             
             int count = destinations.size();
-            if (count > 127) {
-                throw new RuntimeException("VARINT > 127 not yet implemented!");
-            }
-            baos.write(count);
+            byte[] vi = varint(count);
+            baos.write(vi);
             List<SessionRecord> destinationSessions
                     = this.signalProtocolStore.loadExistingSessions(destinations);
             byte[] m = new byte[MESSAGE_KEY_LEN];
@@ -290,8 +287,9 @@ public class SealedSessionCipher {
                 UUID theirUuid = UUID.fromString(destination.getName());
                 IdentityKey theirIdentity = signalProtocolStore.getIdentity(destination);
                 int theirRegistrationId = session.getRemoteRegistrationId();
-                if (theirRegistrationId > (1 <<14)) {
-                    throw new IllegalArgumentException("remote registration id "+theirRegistrationId+" does not fit in 14 bits");
+                System.err.println("REGID = "+theirRegistrationId);
+                if (theirRegistrationId > (1 <<14 -1)) {
+                    throw new InvalidRegistrationIdException(destination, "remote registration id "+theirRegistrationId+" does not fit in 14 bits");
                 }
                 baos.writeBytes(uuidToBytes(theirUuid));
                 baos.write(varint(destination.getDeviceId()));
@@ -476,7 +474,8 @@ public class SealedSessionCipher {
             byte[] digest = mac.doFinal(ciphertextParts[0]);
             byte[] ourMac = ByteUtil.trim(digest, 10);
             byte[] theirMac = ciphertextParts[1];
-
+            System.err.println("[SSC] ourMac = "+ Arrays.toString(ourMac));
+            System.err.println("[SSC] theirMac = " + Arrays.toString(theirMac));
             if (!MessageDigest.isEqual(ourMac, theirMac)) {
                 throw new InvalidMacException("Bad mac!");
             }
@@ -675,10 +674,22 @@ return secrets;
   }
   
   static byte[] varint(int src) {
-      if (src < 127) {
-          return new byte[]{(byte)src};
+      int len = 1;
+      int tmp = src;
+      while (tmp > 127) {
+          tmp >>>= 7;
+          len++;
       }
-      throw new IllegalArgumentException ("Large varint not supported");
+      byte[] answer = new byte[len];
+      tmp = src;
+      int i = 0;
+      while (i < len -1) {
+          answer[i] = (byte)((tmp & 127) | 128);
+          tmp >>>= 7;
+          i++;
+      }
+      answer[i] = (byte)tmp;
+      return answer;
   }
   
     static class DerivedKeys {
