@@ -121,7 +121,8 @@ public class SealedSessionCipher {
         byte[] messageBytes = encrypt(staticKeys.cipherKey, staticKeys.macKey, content.getSerialized());
 
         byte[] messageData = new byte[messageBytes.length];
-        UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(theirIdentity, staticKeyCiphertext, messageBytes);
+//        UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(theirIdentity, staticKeyCiphertext, messageBytes);
+ UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(ephemeral.getPublicKey(), staticKeyCiphertext, messageBytes);
 
         byte[] serialized = pb.getSerialized();
         System.err.println("SSC, encrypted has " + serialized.length + " bytes and = " + Arrays.toString(serialized));
@@ -145,7 +146,6 @@ public class SealedSessionCipher {
 
         try {
             if (version == 1) {
-
                 UnidentifiedSenderMessage wrapper = new UnidentifiedSenderMessage(ciphertext);
                 byte[] ephemeralSalt = ByteUtil.combine("UnidentifiedDelivery".getBytes(), ourIdentity.getPublicKey().getPublicKey().serialize(), wrapper.getEphemeral().serialize());
                 System.err.println("[SSC] decrypt, esalt = "+Arrays.toString(ephemeralSalt));
@@ -217,7 +217,8 @@ public class SealedSessionCipher {
             if ((isLocalE164 || isLocalUuid) && content.getSenderCertificate().getSenderDeviceId() == localDeviceId) {
                 throw new SelfSendException();
             }
-        } catch (InvalidKeyException | InvalidMacException | InvalidCertificateException e) {
+        } catch (Exception e) {
+//        } catch (InvalidKeyException | InvalidMacException | InvalidCertificateException e) {
             throw new InvalidMetadataMessageException(e);
         }
 
@@ -288,7 +289,7 @@ public class SealedSessionCipher {
                 IdentityKey theirIdentity = signalProtocolStore.getIdentity(destination);
                 int theirRegistrationId = session.getRemoteRegistrationId();
                 System.err.println("REGID = "+theirRegistrationId);
-                if (theirRegistrationId > (1 <<14 -1)) {
+                if (theirRegistrationId > ((1 <<14) -1)) {
                     throw new InvalidRegistrationIdException(destination, "remote registration id "+theirRegistrationId+" does not fit in 14 bits");
                 }
                 baos.writeBytes(uuidToBytes(theirUuid));

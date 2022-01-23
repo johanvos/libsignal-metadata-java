@@ -39,6 +39,7 @@ public class UnidentifiedSenderMessageContent {
         case MESSAGE:        this.type = CiphertextMessage.WHISPER_TYPE;        break;
         case PREKEY_MESSAGE: this.type = CiphertextMessage.PREKEY_TYPE;         break;
         case SENDERKEY_MESSAGE: this.type = CiphertextMessage.SENDERKEY_TYPE; break;
+        case PLAINTEXT_CONTENT: this.type = CiphertextMessage.PLAINTEXT_CONTENT_TYPE; break;
         default:             throw new InvalidMetadataMessageException("Unknown type: " + message.getType().getNumber());
       }
 
@@ -61,8 +62,10 @@ public class UnidentifiedSenderMessageContent {
           SignalProtos.UnidentifiedSenderMessage.Message.Builder builder = SignalProtos.UnidentifiedSenderMessage.Message.newBuilder()
                   .setSenderCertificate(SignalProtos.SenderCertificate.parseFrom(senderCertificate.getSerialized()))
                   .setContent(ByteString.copyFrom(message.serialize()))
-                  .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.forNumber(protoType))
-                  .setGroupId(ByteString.copyFrom(groupId.get()));
+                  .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.forNumber(protoType));
+          if (groupId.isPresent()) {
+                  builder.setGroupId(ByteString.copyFrom(groupId.get()));
+          }
           if (contentHint > 0) {
               builder.setContentHint(ContentHint.forNumber(contentHint));
 
