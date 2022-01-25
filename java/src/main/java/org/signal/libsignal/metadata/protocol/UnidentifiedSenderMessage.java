@@ -3,6 +3,8 @@ package org.signal.libsignal.metadata.protocol;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
+import java.util.Arrays;
+import java.util.logging.Logger;
 
 import org.signal.libsignal.metadata.InvalidMetadataMessageException;
 import org.signal.libsignal.metadata.InvalidMetadataVersionException;
@@ -25,17 +27,17 @@ public class UnidentifiedSenderMessage {
   private final byte[]      encryptedMessage;
   private final byte[]      serialized;
   private static final String TAG = UnidentifiedSenderMessage.class.getSimpleName();
+  private static final Logger LOG = Logger.getLogger(UnidentifiedSenderMessage.class.getName());
 
   public UnidentifiedSenderMessage(byte[] serialized)
       throws InvalidMetadataMessageException, InvalidMetadataVersionException
   {
     try {
       this.version = ByteUtil.highBitsToInt(serialized[0]);
-        System.err.println("ser[0] = " + serialized[0] + " and ser[1] = " + serialized[1]);
+        LOG.info("ser[0] = " + serialized[0] + " and ser[1] = " + serialized[1]);
         Log.d(TAG, "[MD] UnidentifiedSendermsg, version = " + this.version + " and serlength = " + serialized.length);
         int nr = (int) (Math.random() * 1000);
         java.nio.file.Files.write(new java.io.File("/tmp/ser" + nr).toPath(), serialized);
-        System.err.println("written to " + nr);
         byte[] ps = new byte[serialized.length - 1];
         System.arraycopy(serialized, 1, ps, 0, serialized.length - 1);
         java.nio.file.Files.write(new java.io.File("/tmp/serps" + nr).toPath(), ps);
@@ -71,7 +73,6 @@ e.printStackTrace();
     this.ephemeral        = ephemeral;
     this.encryptedStatic  = encryptedStatic;
     this.encryptedMessage = encryptedMessage;
-
     byte[] versionBytes = {ByteUtil.intsToByteHighAndLow(CIPHERTEXT_VERSION, CIPHERTEXT_VERSION)};
     byte[] messageBytes = SignalProtos.UnidentifiedSenderMessage.newBuilder()
                                                                 .setEncryptedMessage(ByteString.copyFrom(encryptedMessage))
