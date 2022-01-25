@@ -1,4 +1,5 @@
 module org.whispersystems.metadata {
+    requires java.logging;
     requires com.google.protobuf;
     requires org.whispersystems.protocol;
     requires org.whispersystems.curve25519;

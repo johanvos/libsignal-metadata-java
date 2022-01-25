@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -76,6 +77,7 @@ public class SealedSessionCipher {
     private final int localDeviceId;
     
     static final int SEALED_SENDER_V2_VERSION = 2;
+    private static final Logger LOG = Logger.getLogger(SealedSessionCipher.class.getName());
 
     public SealedSessionCipher(SignalProtocolStore signalProtocolStore,
             UUID localUuid,
@@ -108,10 +110,9 @@ public class SealedSessionCipher {
 
     public byte[] encrypt(SignalProtocolAddress destinationAddress, UnidentifiedSenderMessageContent content)
             throws InvalidKeyException, UntrustedIdentityException {
-        System.err.println("SSC, encrypt usmc for type = "+content.getType());
+        LOG.info("SSC, encrypt usmc for type = "+content.getType());
         IdentityKeyPair ourIdentity = signalProtocolStore.getIdentityKeyPair();
         ECPublicKey theirIdentity = signalProtocolStore.getIdentity(destinationAddress).getPublicKey();
-        System.err.println("SSC, ourIdentity = "+ ourIdentity);
         ECKeyPair ephemeral = Curve.generateKeyPair();
         byte[] ephemeralSalt = ByteUtil.combine("UnidentifiedDelivery".getBytes(), theirIdentity.serialize(), ephemeral.getPublicKey().serialize());
         EphemeralKeys ephemeralKeys = calculateEphemeralKeys(theirIdentity, ephemeral.getPrivateKey(), ephemeralSalt);
@@ -126,7 +127,7 @@ public class SealedSessionCipher {
  UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(ephemeral.getPublicKey(), staticKeyCiphertext, messageBytes);
 
         byte[] serialized = pb.getSerialized();
-        System.err.println("SSC, encrypted has " + serialized.length + " bytes and = " + Arrays.toString(serialized));
+        LOG.fine("SSC, encrypted has " + serialized.length + " bytes");
         return serialized;
 
     }
@@ -139,26 +140,21 @@ public class SealedSessionCipher {
             ProtocolInvalidVersionException, ProtocolDuplicateMessageException,
             ProtocolInvalidKeyIdException, ProtocolUntrustedIdentityException,
             SelfSendException {
-        System.err.println("SealedSessionCipher, decrypt, length = " + ciphertext.length);// + " and content = " + Arrays.toString(ciphertext));
         UnidentifiedSenderMessageContent content;
         int version = ByteUtil.highBitsToInt(ciphertext[0]);
-        System.err.println("[SEALEDSESSIONCIPHER] Need to decrypt "+Arrays.toString(ciphertext));
         IdentityKeyPair ourIdentity = signalProtocolStore.getIdentityKeyPair();
+        LOG.info("SealedSessionCipher, decrypt with version " + version+", length = " + ciphertext.length);// + " and content = " + Arrays.toString(ciphertext));
 
         try {
             if (version == 1) {
                 UnidentifiedSenderMessage wrapper = new UnidentifiedSenderMessage(ciphertext);
                 byte[] ephemeralSalt = ByteUtil.combine("UnidentifiedDelivery".getBytes(), ourIdentity.getPublicKey().getPublicKey().serialize(), wrapper.getEphemeral().serialize());
-                System.err.println("[SSC] decrypt, esalt = "+Arrays.toString(ephemeralSalt));
                 EphemeralKeys ephemeralKeys = calculateEphemeralKeys(wrapper.getEphemeral(), ourIdentity.getPrivateKey(), ephemeralSalt);
                 byte[] staticKeyBytes = decrypt(ephemeralKeys.cipherKey, ephemeralKeys.macKey, wrapper.getEncryptedStatic());
-                System.err.println("[SSC] staticKeybytes = " + Arrays.toString(staticKeyBytes));
                 ECPublicKey staticKey = Curve.decodePoint(staticKeyBytes, 0);
                 byte[] staticSalt = ByteUtil.combine(ephemeralKeys.chainKey, wrapper.getEncryptedStatic());
-                System.err.println("[SSC] staticSalt = "+ Arrays.toString(staticSalt));
                 StaticKeys staticKeys = calculateStaticKeys(staticKey, ourIdentity.getPrivateKey(), staticSalt);
                 byte[] messageBytes = decrypt(staticKeys.cipherKey, staticKeys.macKey, wrapper.getEncryptedMessage());
-                System.err.println("[SSC] mB = "+Arrays.toString(messageBytes));
                 content = new UnidentifiedSenderMessageContent(messageBytes);
 
                 validator.validate(content.getSenderCertificate(), timestamp);
@@ -182,39 +178,26 @@ public class SealedSessionCipher {
                 System.arraycopy(ciphertext, idx, theirPublicKey, 1, PUBLIC_KEY_LEN);
                 idx = idx + PUBLIC_KEY_LEN;
                 System.arraycopy(ciphertext, idx, encrypted_message, 0, msgSize);
-                System.err.println("MSGKEY = "+Arrays.toString(encrypted_message_key));
-                System.err.println("AUTH_TAG = "+Arrays.toString(encrypted_authentication_tag));
-                System.err.println("PUBKEY = "+Arrays.toString(theirPublicKey));
-                System.err.println("first byte encryptedMessage = " + encrypted_message[0] + " at position " + idx);
-
-                IdentityKeyPair ik = signalProtocolStore.getIdentityKeyPair();
+                            IdentityKeyPair ik = signalProtocolStore.getIdentityKeyPair();
 
                 ECPublicKey theirPubKey = Curve.decodePoint(theirPublicKey, 0);
                 byte[] answer = apply_agreement_xor(ik, theirPubKey, false, encrypted_message_key);
                 DerivedKeys keys = calculateDerivedKeys(answer);
                 ECPublicKey calced = Curve.createPublicKeyFromPrivateKey(keys.e.serialize());
-                System.err.println("derived publicKey = " + Arrays.toString(calced.serialize()));
-                System.err.println("ephemeral_pubkey = "+ Arrays.toString(theirPublicKey));
-                
+               
                 
                 byte[] nonce = new byte[12];
                 try {
                     Cipher cipher = Cipher.getInstance("AES/GCM-SIV/NoPadding");
                     cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keys.k, "AES"), new IvParameterSpec(nonce));
                     byte[] messageBytes = cipher.doFinal(encrypted_message);
-                    System.err.println("First byte messageBytes = " + Arrays.toString(messageBytes));
 
                     content = new UnidentifiedSenderMessageContent(messageBytes);
                     
                     ECPublicKey key = content.getSenderCertificate().getKey();
                     byte[] computedAuthenticationTag = computeAuthenticationTag(ik, new IdentityKey(key), false, theirPubKey, encrypted_message_key);
-                    System.err.println("COMPUTED AUTH_TAG = "+Arrays.toString(computedAuthenticationTag));
-                    System.err.println("ENCR AUTH_TAG = "+Arrays.toString(encrypted_authentication_tag));
-
-                    System.err.println("got content: "+Arrays.toString(content.getContent()));
                     int ch = content.getContentHint();
                     byte[] gid = content.getGroupId().get();
-                    System.err.println("hint = "+ch+" and gid = "+Arrays.toString(gid));
                 } catch (Exception e) {
                     e.printStackTrace();
                     throw new IllegalArgumentException("bummer: " + e);
@@ -264,8 +247,7 @@ public class SealedSessionCipher {
             InvalidKeyException, NoSessionException,
             UntrustedIdentityException, InvalidRegistrationIdException
     {
-     //   System.err.println("MRE, umc = "+ Arrays.toString(usmc.getSerialized()));
-        System.err.println("MRE, type = " + usmc.getType());
+        LOG.info("MultiRecipientEncrypt, type = " + usmc.getType());
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte versionByte = (byte) (SEALED_SENDER_V2_VERSION | SEALED_SENDER_V2_VERSION <<4);
@@ -286,8 +268,7 @@ public class SealedSessionCipher {
             Cipher cipher = Cipher.getInstance("AES/GCM-SIV/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keys.k, "AES"), new IvParameterSpec(nonce));
             byte[] ciphertext = cipher.doFinal(usmc.getSerialized());
-            System.err.println("ENCRYPT, ciphertext length = "+ciphertext.length);
-        //    System.err.println("ct = "+Arrays.toString(ciphertext));
+            LOG.fine("ENCRYPT, ciphertext length = "+ciphertext.length);
             
             for (int i = 0; i < count; i++) {
                 SignalProtocolAddress destination = destinations.get(i);
@@ -295,7 +276,6 @@ public class SealedSessionCipher {
                 UUID theirUuid = UUID.fromString(destination.getName());
                 IdentityKey theirIdentity = signalProtocolStore.getIdentity(destination);
                 int theirRegistrationId = session.getRemoteRegistrationId();
-                System.err.println("REGID = "+theirRegistrationId);
                 if (theirRegistrationId > ((1 <<14) -1)) {
                     throw new InvalidRegistrationIdException(destination, "remote registration id "+theirRegistrationId+" does not fit in 14 bits");
                 }
@@ -310,11 +290,9 @@ public class SealedSessionCipher {
                 byte[] at_i = computeAuthenticationTag(myKeyPair, theirIdentity, true, ePub, c_i);
                 baos.writeBytes(at_i);
             }
-        //    System.err.println("multi-encrypt, pkb = "+Arrays.toString(ePub.getPublicKeyBytes()));
             baos.writeBytes(ePub.getPublicKeyBytes());
             baos.writeBytes(ciphertext);
             byte[] serialized = baos.toByteArray();
-     //       System.err.println("result of multi-enc = "+Arrays.toString(serialized));
             return serialized;
 //
 //    // Unsafely access the native handles for the recipients and sessions,
@@ -375,7 +353,6 @@ public class SealedSessionCipher {
         int idx = 2;
         int LEN = MESSAGE_KEY_LEN+AUTH_TAG_LEN;
         List<byte[]> messages = new ArrayList<>(cnt);
-        System.err.println("MRMFSR, cnt = "+cnt);
         for (int i = 0; i < cnt; i++) {
             byte[] msg = new byte[LEN];
             idx = idx + 16; // uuid
@@ -383,12 +360,10 @@ public class SealedSessionCipher {
             idx = idx + 2; // registration_id
             System.arraycopy(data, idx, msg, 0, LEN);
             messages.add(msg);
-            System.err.println("MSGKEY + LEN = "+Arrays.toString(msg));
             idx = idx + LEN;
         }
         int remaining = data.length - idx;
         int remstart = idx;
-        System.err.println("dataremaining = "+data[remaining]+" and then "+ data[remaining+1]+" and idx = " + idx+" and rem = "+remaining);
         byte[] serialized = new byte[cnt*(1+LEN+remaining)];
         idx = 0;
         for (int i = 0; i < cnt; i++) {
@@ -398,7 +373,6 @@ public class SealedSessionCipher {
             idx = idx + LEN;
             System.arraycopy(data, remstart, serialized, idx, remaining);
         }
-        System.err.println("SingleRec has "+serialized.length+" bytes");
         return serialized;
     }
 
@@ -440,7 +414,7 @@ public class SealedSessionCipher {
             NoSessionException {
         SenderCertificate senderCertificate = message.getSenderCertificate();
         SignalProtocolAddress sender = getPreferredAddress(signalProtocolStore, message.getSenderCertificate());
-        System.err.println("SSC, decrypt USMC, type = " + message.getType());
+        LOG.fine("SSC, decrypt USMC, type = " + message.getType());
         switch (message.getType()) {
             case CiphertextMessage.WHISPER_TYPE:
                 return new SessionCipher(signalProtocolStore, sender).decrypt(new SignalMessage(message.getContent()));
@@ -485,8 +459,6 @@ public class SealedSessionCipher {
             byte[] digest = mac.doFinal(ciphertextParts[0]);
             byte[] ourMac = ByteUtil.trim(digest, 10);
             byte[] theirMac = ciphertextParts[1];
-            System.err.println("[SSC] ourMac = "+ Arrays.toString(ourMac));
-            System.err.println("[SSC] theirMac = " + Arrays.toString(theirMac));
             if (!MessageDigest.isEqual(ourMac, theirMac)) {
                 throw new InvalidMacException("Bad mac!");
             }
@@ -503,8 +475,7 @@ public class SealedSessionCipher {
     private static SignalProtocolAddress getPreferredAddress(SignalProtocolStore store, SenderCertificate certificate) {
         SignalProtocolAddress uuidAddress = certificate.getSenderUuid().isPresent() ? new SignalProtocolAddress(certificate.getSenderUuid().get(), certificate.getSenderDeviceId()) : null;
         SignalProtocolAddress e164Address = certificate.getSenderE164().isPresent() ? new SignalProtocolAddress(certificate.getSenderE164().get(), certificate.getSenderDeviceId()) : null;
-        System.err.println("GPA, uuida = "+uuidAddress);
-        System.err.println("GPA, e164 = "+e164Address);
+
         if (uuidAddress != null && store.containsSession(uuidAddress)) {
             return uuidAddress;
         } else if (e164Address != null && store.containsSession(e164Address)) {
@@ -658,15 +629,6 @@ public class SealedSessionCipher {
             ECPublicKey ephemeralPubKey, byte[] encryptedMessageKey) throws InvalidKeyException {
       
         try {
-            System.err.println("======");
-            System.err.println("compute authtag");
-            System.err.println("ourkeys: pub = "+Arrays.toString(ourKeys.getPublicKey().getPublicKey().serialize()));
-            System.err.println("ourkeys: confusing = "+Arrays.toString(ourKeys.getPublicKey().serialize()));
-            System.err.println("ourkeys: private = "+ Arrays.toString(ourKeys.getPrivateKey().serialize()));
-            System.err.println("theirkey = "+Arrays.toString(theirKey.getPublicKey().serialize()));
-            System.err.println("direction = "+direction);
-            System.err.println("epub = "+Arrays.toString(ephemeralPubKey.serialize()));
-            System.err.println("enc = "+Arrays.toString(encryptedMessageKey));
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte[] agreement = Curve.calculateAgreement(theirKey.getPublicKey(), ourKeys.getPrivateKey());
             baos.write(agreement);
@@ -680,8 +642,7 @@ public class SealedSessionCipher {
                 baos.write(ourKeys.getPublicKey().serialize());
             } HKDF hkdf = HKDFv3.createFor(3);
         byte[] secrets = hkdf.deriveSecrets(baos.toByteArray(), LABEL_DH_S.getBytes(), AUTH_TAG_LEN);
-            System.err.println("Result = "+Arrays.asList(secrets));
-        System.err.println("=======");
+
 
         return secrets;
         } catch (IOException ex) {

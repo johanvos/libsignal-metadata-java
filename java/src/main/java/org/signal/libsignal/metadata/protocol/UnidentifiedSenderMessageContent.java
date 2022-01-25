@@ -4,6 +4,7 @@ package org.signal.libsignal.metadata.protocol;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import java.util.Optional;
+import java.util.logging.Logger;
 
 import org.signal.libsignal.metadata.InvalidMetadataMessageException;
 import org.signal.libsignal.metadata.SignalProtos;
@@ -25,15 +26,18 @@ public class UnidentifiedSenderMessageContent {
   private final byte[]            serialized;
   private final Optional<byte[]>    groupId;
   private int contentHint;
+  
+  private static final Logger LOG = Logger.getLogger(UnidentifiedSenderMessageContent.class.getName());
+
 
   public UnidentifiedSenderMessageContent(byte[] serialized) throws InvalidMetadataMessageException, InvalidCertificateException {
     try {
       SignalProtos.UnidentifiedSenderMessage.Message message = SignalProtos.UnidentifiedSenderMessage.Message.parseFrom(serialized);
-        System.err.println("hastype = "+message.hasType()+" type = " + message.getType());
+      LOG.info("construct usmc = "+message.hasType()+" type = " + message.getType());
       if (!message.hasType() || !message.hasSenderCertificate() || !message.hasContent()) {
         throw new InvalidMetadataMessageException("Missing fields");
       }
-        System.err.println("GROUPID = " + message.getGroupId());
+      LOG.fine("GROUPID = " + message.getGroupId());
         this.groupId = Optional.of(message.getGroupId().toByteArray());
       switch (message.getType()) {
         case MESSAGE:        this.type = CiphertextMessage.WHISPER_TYPE;        break;
@@ -57,7 +61,7 @@ public class UnidentifiedSenderMessageContent {
                                           int contentHint,
                                           Optional<byte[]> groupId) {
       try {
-          System.err.println("messagetype = "+message.getType()+" and poto  = "+getProtoType(message.getType()));
+          LOG.fine("messagetype = "+message.getType()+" and prototype  = "+getProtoType(message.getType()));
           int protoType = getProtoType(message.getType());
           SignalProtos.UnidentifiedSenderMessage.Message.Builder builder = SignalProtos.UnidentifiedSenderMessage.Message.newBuilder()
                   .setSenderCertificate(SignalProtos.SenderCertificate.parseFrom(senderCertificate.getSerialized()))
@@ -85,11 +89,9 @@ public class UnidentifiedSenderMessageContent {
   
   public UnidentifiedSenderMessageContent(int type, SenderCertificate senderCertificate, byte[] content) {
     try {
-        System.err.println("TYPE = "+type);
-        System.err.println("congerted into "+getProtoType(type));
+
       this.serialized = SignalProtos.UnidentifiedSenderMessage.Message.newBuilder()
               .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.valueOf(getProtoType(type)))                 
-           //   .setType(SignalProtos.UnidentifiedSenderMessage.Message.Type.forNumber(type))
                                                                       .setSenderCertificate(SignalProtos.SenderCertificate.parseFrom(senderCertificate.getSerialized()))
                                                                       .setContent(ByteString.copyFrom(content))
                                                                       .build()

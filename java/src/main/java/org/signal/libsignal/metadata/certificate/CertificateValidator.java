@@ -23,7 +23,6 @@ public class CertificateValidator {
 
   public void validate(SenderCertificate certificate, long validationTime) throws InvalidCertificateException {
     try {
-        System.err.println("CF: validate certificate "+ certificate);
       ServerCertificate serverCertificate = certificate.getSigner();
       validate(serverCertificate);
 
