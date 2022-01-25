@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 import java.util.UUID;
 
 import javax.crypto.BadPaddingException;
@@ -192,6 +193,10 @@ public class SealedSessionCipher {
                 byte[] answer = apply_agreement_xor(ik, theirPubKey, false, encrypted_message_key);
                 DerivedKeys keys = calculateDerivedKeys(answer);
                 ECPublicKey calced = Curve.createPublicKeyFromPrivateKey(keys.e.serialize());
+                System.err.println("derived publicKey = " + Arrays.toString(calced.serialize()));
+                System.err.println("ephemeral_pubkey = "+ Arrays.toString(theirPublicKey));
+                
+                
                 byte[] nonce = new byte[12];
                 try {
                     Cipher cipher = Cipher.getInstance("AES/GCM-SIV/NoPadding");
@@ -200,6 +205,12 @@ public class SealedSessionCipher {
                     System.err.println("First byte messageBytes = " + Arrays.toString(messageBytes));
 
                     content = new UnidentifiedSenderMessageContent(messageBytes);
+                    
+                    ECPublicKey key = content.getSenderCertificate().getKey();
+                    byte[] computedAuthenticationTag = computeAuthenticationTag(ik, new IdentityKey(key), false, theirPubKey, encrypted_message_key);
+                    System.err.println("COMPUTED AUTH_TAG = "+Arrays.toString(computedAuthenticationTag));
+                    System.err.println("ENCR AUTH_TAG = "+Arrays.toString(encrypted_authentication_tag));
+
                     System.err.println("got content: "+Arrays.toString(content.getContent()));
                     int ch = content.getContentHint();
                     byte[] gid = content.getGroupId().get();
@@ -259,18 +270,14 @@ public class SealedSessionCipher {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte versionByte = (byte) (SEALED_SENDER_V2_VERSION | SEALED_SENDER_V2_VERSION <<4);
             baos.write(versionByte);
-            
+            IdentityKeyPair myKeyPair = signalProtocolStore.getIdentityKeyPair();
             int count = destinations.size();
             byte[] vi = varint(count);
             baos.write(vi);
             List<SessionRecord> destinationSessions
                     = this.signalProtocolStore.loadExistingSessions(destinations);
             byte[] m = new byte[MESSAGE_KEY_LEN];
-            try {
-                SecureRandom.getInstanceStrong().nextBytes(m);
-            } catch (NoSuchAlgorithmException ex) {
-                ex.printStackTrace();
-            }
+            new Random().nextBytes(m);
             DerivedKeys keys = calculateDerivedKeys(m);
             ECPublicKey ePub = Curve.createPublicKeyFromPrivateKey(keys.e.serialize());
             IdentityKeyPair ourKeys = new IdentityKeyPair(new IdentityKey(ePub),keys.e);
@@ -300,7 +307,7 @@ public class SealedSessionCipher {
                 baos.write(reglow);
                 byte[] c_i = apply_agreement_xor(ourKeys, theirIdentity.getPublicKey(), true, m);
                 baos.writeBytes(c_i);
-                byte[] at_i = computeAuthenticationTag(ourKeys, theirIdentity, true, ePub, c_i);
+                byte[] at_i = computeAuthenticationTag(myKeyPair, theirIdentity, true, ePub, c_i);
                 baos.writeBytes(at_i);
             }
         //    System.err.println("multi-encrypt, pkb = "+Arrays.toString(ePub.getPublicKeyBytes()));
@@ -427,8 +434,11 @@ public class SealedSessionCipher {
         }
     }
 
-    private byte[] decrypt(UnidentifiedSenderMessageContent message)
-            throws InvalidVersionException, InvalidMessageException, InvalidKeyException, DuplicateMessageException, InvalidKeyIdException, UntrustedIdentityException, LegacyMessageException, NoSessionException {
+    private byte[] decrypt(UnidentifiedSenderMessageContent message)  throws InvalidVersionException, 
+            InvalidMessageException, InvalidKeyException, DuplicateMessageException, 
+            InvalidKeyIdException, UntrustedIdentityException, LegacyMessageException, 
+            NoSessionException {
+        SenderCertificate senderCertificate = message.getSenderCertificate();
         SignalProtocolAddress sender = getPreferredAddress(signalProtocolStore, message.getSenderCertificate());
         System.err.println("SSC, decrypt USMC, type = " + message.getType());
         switch (message.getType()) {
@@ -646,7 +656,17 @@ public class SealedSessionCipher {
     
     static byte[] computeAuthenticationTag(IdentityKeyPair ourKeys, IdentityKey theirKey, boolean direction,
             ECPublicKey ephemeralPubKey, byte[] encryptedMessageKey) throws InvalidKeyException {
+      
         try {
+            System.err.println("======");
+            System.err.println("compute authtag");
+            System.err.println("ourkeys: pub = "+Arrays.toString(ourKeys.getPublicKey().getPublicKey().serialize()));
+            System.err.println("ourkeys: confusing = "+Arrays.toString(ourKeys.getPublicKey().serialize()));
+            System.err.println("ourkeys: private = "+ Arrays.toString(ourKeys.getPrivateKey().serialize()));
+            System.err.println("theirkey = "+Arrays.toString(theirKey.getPublicKey().serialize()));
+            System.err.println("direction = "+direction);
+            System.err.println("epub = "+Arrays.toString(ephemeralPubKey.serialize()));
+            System.err.println("enc = "+Arrays.toString(encryptedMessageKey));
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte[] agreement = Curve.calculateAgreement(theirKey.getPublicKey(), ourKeys.getPrivateKey());
             baos.write(agreement);
@@ -660,7 +680,10 @@ public class SealedSessionCipher {
                 baos.write(ourKeys.getPublicKey().serialize());
             } HKDF hkdf = HKDFv3.createFor(3);
         byte[] secrets = hkdf.deriveSecrets(baos.toByteArray(), LABEL_DH_S.getBytes(), AUTH_TAG_LEN);
-return secrets;
+            System.err.println("Result = "+Arrays.asList(secrets));
+        System.err.println("=======");
+
+        return secrets;
         } catch (IOException ex) {
             ex.printStackTrace();
         }
