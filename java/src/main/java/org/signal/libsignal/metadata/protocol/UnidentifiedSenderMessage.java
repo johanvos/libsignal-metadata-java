@@ -36,11 +36,13 @@ public class UnidentifiedSenderMessage {
       this.version = ByteUtil.highBitsToInt(serialized[0]);
         LOG.info("ser[0] = " + serialized[0] + " and ser[1] = " + serialized[1]);
         Log.d(TAG, "[MD] UnidentifiedSendermsg, version = " + this.version + " and serlength = " + serialized.length);
+/*
         int nr = (int) (Math.random() * 1000);
         java.nio.file.Files.write(new java.io.File("/tmp/ser" + nr).toPath(), serialized);
         byte[] ps = new byte[serialized.length - 1];
         System.arraycopy(serialized, 1, ps, 0, serialized.length - 1);
         java.nio.file.Files.write(new java.io.File("/tmp/serps" + nr).toPath(), ps);
+*/
 
       if (version > CIPHERTEXT_VERSION) {
         throw new InvalidMetadataVersionException("Unknown version: " + this.version);
