@@ -1,6 +1,5 @@
 package org.signal.libsignal.metadata.protocol;
 
-
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import java.util.Arrays;
@@ -19,79 +18,76 @@ import org.whispersystems.libsignal.util.ByteUtil;
 
 public class UnidentifiedSenderMessage {
 
-  private static final int CIPHERTEXT_VERSION = 1;
+    private static final int CIPHERTEXT_VERSION = 1;
 
-  private int         version;
-  private final ECPublicKey ephemeral;
-  private final byte[]      encryptedStatic;
-  private final byte[]      encryptedMessage;
-  private final byte[]      serialized;
-  private static final String TAG = UnidentifiedSenderMessage.class.getSimpleName();
-  private static final Logger LOG = Logger.getLogger(UnidentifiedSenderMessage.class.getName());
+    private int version;
+    private final ECPublicKey ephemeral;
+    private final byte[] encryptedStatic;
+    private final byte[] encryptedMessage;
+    private final byte[] serialized;
+    private static final String TAG = UnidentifiedSenderMessage.class.getSimpleName();
+    private static final Logger LOG = Logger.getLogger(UnidentifiedSenderMessage.class.getName());
 
-  public UnidentifiedSenderMessage(byte[] serialized)
-      throws InvalidMetadataMessageException, InvalidMetadataVersionException
-  {
-    try {
-      this.version = ByteUtil.highBitsToInt(serialized[0]);
-        LOG.info("ser[0] = " + serialized[0] + " and ser[1] = " + serialized[1]);
-        Log.d(TAG, "[MD] UnidentifiedSendermsg, version = " + this.version + " and serlength = " + serialized.length);
+    public UnidentifiedSenderMessage(byte[] serialized)
+            throws InvalidMetadataMessageException, InvalidMetadataVersionException {
+        try {
+            this.version = ByteUtil.highBitsToInt(serialized[0]);
+            LOG.fine("ser[0] = " + serialized[0] + " and ser[1] = " + serialized[1]);
+            LOG.info("Construct UnidentifiedSender from byte[], version = " + this.version + " and bytelength = " + serialized.length);
 
-      if (version > CIPHERTEXT_VERSION) {
-        throw new InvalidMetadataVersionException("Unknown version: " + this.version);
-      }
+            if (version > CIPHERTEXT_VERSION) {
+                throw new InvalidMetadataVersionException("Unknown version: " + this.version);
+            }
 
-      SignalProtos.UnidentifiedSenderMessage unidentifiedSenderMessage = SignalProtos.UnidentifiedSenderMessage.parseFrom(ByteString.copyFrom(serialized, 1, serialized.length - 1));
+            SignalProtos.UnidentifiedSenderMessage unidentifiedSenderMessage = SignalProtos.UnidentifiedSenderMessage.parseFrom(ByteString.copyFrom(serialized, 1, serialized.length - 1));
 
-      if (!unidentifiedSenderMessage.hasEphemeralPublic() ||
-          !unidentifiedSenderMessage.hasEncryptedStatic() ||
-          !unidentifiedSenderMessage.hasEncryptedMessage())
-      {
-        throw new InvalidMetadataMessageException("Missing fields");
-      }
+            if (!unidentifiedSenderMessage.hasEphemeralPublic()
+                    || !unidentifiedSenderMessage.hasEncryptedStatic()
+                    || !unidentifiedSenderMessage.hasEncryptedMessage()) {
+                throw new InvalidMetadataMessageException("Missing fields");
+            }
 
-      this.ephemeral        = Curve.decodePoint(unidentifiedSenderMessage.getEphemeralPublic().toByteArray(), 0);
-      this.encryptedStatic  = unidentifiedSenderMessage.getEncryptedStatic().toByteArray();
-      this.encryptedMessage = unidentifiedSenderMessage.getEncryptedMessage().toByteArray();
-      this.serialized       = serialized;
-    } catch (InvalidProtocolBufferException | InvalidKeyException e) {
-      throw new InvalidMetadataMessageException(e);
+            this.ephemeral = Curve.decodePoint(unidentifiedSenderMessage.getEphemeralPublic().toByteArray(), 0);
+            this.encryptedStatic = unidentifiedSenderMessage.getEncryptedStatic().toByteArray();
+            this.encryptedMessage = unidentifiedSenderMessage.getEncryptedMessage().toByteArray();
+            this.serialized = serialized;
+        } catch (InvalidProtocolBufferException | InvalidKeyException e) {
+            throw new InvalidMetadataMessageException(e);
+        } catch (java.io.IOException e) {
+            e.printStackTrace();
+            throw new InvalidMetadataMessageException(e);
+        }
     }
-    catch (java.io.IOException e) {
-e.printStackTrace();
-      throw new InvalidMetadataMessageException(e);
+
+    public UnidentifiedSenderMessage(ECPublicKey ephemeral, byte[] encryptedStatic, byte[] encryptedMessage) {
+        this.version = CIPHERTEXT_VERSION;
+        this.ephemeral = ephemeral;
+        this.encryptedStatic = encryptedStatic;
+        this.encryptedMessage = encryptedMessage;
+        byte[] versionBytes = {ByteUtil.intsToByteHighAndLow(CIPHERTEXT_VERSION, CIPHERTEXT_VERSION)};
+        byte[] messageBytes = SignalProtos.UnidentifiedSenderMessage.newBuilder()
+                .setEncryptedMessage(ByteString.copyFrom(encryptedMessage))
+                .setEncryptedStatic(ByteString.copyFrom(encryptedStatic))
+                .setEphemeralPublic(ByteString.copyFrom(ephemeral.serialize()))
+                .build()
+                .toByteArray();
+
+        this.serialized = ByteUtil.combine(versionBytes, messageBytes);
     }
-  }
 
-  public UnidentifiedSenderMessage(ECPublicKey ephemeral, byte[] encryptedStatic, byte[] encryptedMessage) {
-    this.version          = CIPHERTEXT_VERSION;
-    this.ephemeral        = ephemeral;
-    this.encryptedStatic  = encryptedStatic;
-    this.encryptedMessage = encryptedMessage;
-    byte[] versionBytes = {ByteUtil.intsToByteHighAndLow(CIPHERTEXT_VERSION, CIPHERTEXT_VERSION)};
-    byte[] messageBytes = SignalProtos.UnidentifiedSenderMessage.newBuilder()
-                                                                .setEncryptedMessage(ByteString.copyFrom(encryptedMessage))
-                                                                .setEncryptedStatic(ByteString.copyFrom(encryptedStatic))
-                                                                .setEphemeralPublic(ByteString.copyFrom(ephemeral.serialize()))
-                                                                .build()
-                                                                .toByteArray();
+    public ECPublicKey getEphemeral() {
+        return ephemeral;
+    }
 
-    this.serialized = ByteUtil.combine(versionBytes, messageBytes);
-  }
+    public byte[] getEncryptedStatic() {
+        return encryptedStatic;
+    }
 
-  public ECPublicKey getEphemeral() {
-    return ephemeral;
-  }
+    public byte[] getEncryptedMessage() {
+        return encryptedMessage;
+    }
 
-  public byte[] getEncryptedStatic() {
-    return encryptedStatic;
-  }
-
-  public byte[] getEncryptedMessage() {
-    return encryptedMessage;
-  }
-
-  public byte[] getSerialized() {
-    return serialized;
-  }
+    public byte[] getSerialized() {
+        return serialized;
+    }
 }

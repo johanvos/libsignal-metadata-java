@@ -247,7 +247,7 @@ public class SealedSessionCipher {
             InvalidKeyException, NoSessionException,
             UntrustedIdentityException, InvalidRegistrationIdException
     {
-        LOG.info("MultiRecipientEncrypt, type = " + usmc.getType());
+        LOG.info("MultiRecipientEncrypt, messagetype = " + usmc.getType());
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte versionByte = (byte) (SEALED_SENDER_V2_VERSION | SEALED_SENDER_V2_VERSION <<4);
