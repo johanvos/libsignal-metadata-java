@@ -23,6 +23,10 @@ public abstract class ProtocolException extends Exception {
     this.senderDevice = content.getSenderCertificate().getSenderDeviceId();
   }
 
+  public Optional<UnidentifiedSenderMessageContent> getUnidentifiedSenderMessageContent() {
+    return content;
+  }
+
   public String getSender() {
     return sender;
   }
