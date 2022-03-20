@@ -10,7 +10,6 @@ import org.signal.libsignal.metadata.SignalProtos;
 import org.signal.libsignal.metadata.SignalProtos.UnidentifiedSenderMessage.Message.ContentHint;
 import org.signal.libsignal.metadata.certificate.InvalidCertificateException;
 import org.signal.libsignal.metadata.certificate.SenderCertificate;
-import org.whispersystems.libsignal.InvalidMessageException;
 import org.whispersystems.libsignal.protocol.CiphertextMessage;
 
 public class UnidentifiedSenderMessageContent {
@@ -68,7 +67,7 @@ public class UnidentifiedSenderMessageContent {
             int contentHint,
             Optional<byte[]> groupId) {
         try {
-            LOG.fine("messagetype = " + message.getType() + " and prototype  = " + getProtoType(message.getType()));
+            LOG.info("messagetype = " + message.getType() + " and prototype  = " + getProtoType(message.getType()));
             int protoType = getProtoType(message.getType());
             SignalProtos.UnidentifiedSenderMessage.Message.Builder builder = SignalProtos.UnidentifiedSenderMessage.Message.newBuilder()
                     .setSenderCertificate(SignalProtos.SenderCertificate.parseFrom(senderCertificate.getSerialized()))
