@@ -223,7 +223,8 @@ public class SealedSessionCipher {
                     content.getGroupId(),
                     decrypt(content));
         } catch (InvalidMessageException e) {
-            throw new ProtocolInvalidMessageException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
+            String sender = content.getSenderCertificate().getSenderUuid().orElse(content.getSenderCertificate().getSender());
+            throw new ProtocolInvalidMessageException(e, sender, content.getSenderCertificate().getSenderDeviceId());
         } catch (InvalidKeyException e) {
             throw new ProtocolInvalidKeyException(e, content.getSenderCertificate().getSender(), content.getSenderCertificate().getSenderDeviceId());
         } catch (NoSessionException e) {
