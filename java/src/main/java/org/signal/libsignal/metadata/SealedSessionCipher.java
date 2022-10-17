@@ -75,7 +75,7 @@ public class SealedSessionCipher {
     private final String localE164Address;
     private final String localUuidAddress;
     private final int localDeviceId;
-    
+
     static final int SEALED_SENDER_V2_VERSION = 2;
     private static final Logger LOG = Logger.getLogger(SealedSessionCipher.class.getName());
 
@@ -110,7 +110,7 @@ public class SealedSessionCipher {
 
     public byte[] encrypt(SignalProtocolAddress destinationAddress, UnidentifiedSenderMessageContent content)
             throws InvalidKeyException, UntrustedIdentityException {
-        LOG.info("SSC, encrypt usmc for type = "+content.getType());
+        LOG.info("SSC, encrypt usmc for type = " + content.getType());
         IdentityKeyPair ourIdentity = signalProtocolStore.getIdentityKeyPair();
         ECPublicKey theirIdentity = signalProtocolStore.getIdentity(destinationAddress).getPublicKey();
         ECKeyPair ephemeral = Curve.generateKeyPair();
@@ -124,7 +124,7 @@ public class SealedSessionCipher {
 
         byte[] messageData = new byte[messageBytes.length];
 //        UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(theirIdentity, staticKeyCiphertext, messageBytes);
- UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(ephemeral.getPublicKey(), staticKeyCiphertext, messageBytes);
+        UnidentifiedSenderMessage pb = new UnidentifiedSenderMessage(ephemeral.getPublicKey(), staticKeyCiphertext, messageBytes);
 
         byte[] serialized = pb.getSerialized();
         LOG.fine("SSC, encrypted has " + serialized.length + " bytes");
@@ -143,7 +143,7 @@ public class SealedSessionCipher {
         UnidentifiedSenderMessageContent content;
         int version = ByteUtil.highBitsToInt(ciphertext[0]);
         IdentityKeyPair ourIdentity = signalProtocolStore.getIdentityKeyPair();
-        LOG.info("SealedSessionCipher, decrypt with version " + version+", length = " + ciphertext.length);// + " and content = " + Arrays.toString(ciphertext));
+        LOG.info("SealedSessionCipher, decrypt with version " + version + ", length = " + ciphertext.length);// + " and content = " + Arrays.toString(ciphertext));
 
         try {
             if (version == 1) {
@@ -178,14 +178,13 @@ public class SealedSessionCipher {
                 System.arraycopy(ciphertext, idx, theirPublicKey, 1, PUBLIC_KEY_LEN);
                 idx = idx + PUBLIC_KEY_LEN;
                 System.arraycopy(ciphertext, idx, encrypted_message, 0, msgSize);
-                            IdentityKeyPair ik = signalProtocolStore.getIdentityKeyPair();
+                IdentityKeyPair ik = signalProtocolStore.getIdentityKeyPair();
 
                 ECPublicKey theirPubKey = Curve.decodePoint(theirPublicKey, 0);
                 byte[] answer = apply_agreement_xor(ik, theirPubKey, false, encrypted_message_key);
                 DerivedKeys keys = calculateDerivedKeys(answer);
                 ECPublicKey calced = Curve.createPublicKeyFromPrivateKey(keys.e.serialize());
-               
-                
+
                 byte[] nonce = new byte[12];
                 try {
                     Cipher cipher = Cipher.getInstance("AES/GCM-SIV/NoPadding");
@@ -193,7 +192,7 @@ public class SealedSessionCipher {
                     byte[] messageBytes = cipher.doFinal(encrypted_message);
 
                     content = new UnidentifiedSenderMessageContent(messageBytes);
-                    
+
                     ECPublicKey key = content.getSenderCertificate().getKey();
                     byte[] computedAuthenticationTag = computeAuthenticationTag(ik, new IdentityKey(key), false, theirPubKey, encrypted_message_key);
                     int ch = content.getContentHint();
@@ -217,9 +216,10 @@ public class SealedSessionCipher {
         }
 
         try {
-            return new DecryptionResult(content.getSenderCertificate().getSenderUuid(),
+            return new DecryptionResult(content.getSenderCertificate().getSenderUuid().get(),
                     content.getSenderCertificate().getSenderE164(),
                     content.getSenderCertificate().getSenderDeviceId(),
+                    content.getType(),
                     content.getGroupId(),
                     decrypt(content));
         } catch (InvalidMessageException e) {
@@ -246,12 +246,11 @@ public class SealedSessionCipher {
     public byte[] multiRecipientEncrypt(List<SignalProtocolAddress> destinations, UnidentifiedSenderMessageContent usmc)
             throws
             InvalidKeyException, NoSessionException,
-            UntrustedIdentityException, InvalidRegistrationIdException
-    {
+            UntrustedIdentityException, InvalidRegistrationIdException {
         LOG.info("MultiRecipientEncrypt, messagetype = " + usmc.getType());
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte versionByte = (byte) (SEALED_SENDER_V2_VERSION | SEALED_SENDER_V2_VERSION <<4);
+            byte versionByte = (byte) (SEALED_SENDER_V2_VERSION | SEALED_SENDER_V2_VERSION << 4);
             baos.write(versionByte);
             IdentityKeyPair myKeyPair = signalProtocolStore.getIdentityKeyPair();
             int count = destinations.size();
@@ -263,27 +262,27 @@ public class SealedSessionCipher {
             new Random().nextBytes(m);
             DerivedKeys keys = calculateDerivedKeys(m);
             ECPublicKey ePub = Curve.createPublicKeyFromPrivateKey(keys.e.serialize());
-            IdentityKeyPair ourKeys = new IdentityKeyPair(new IdentityKey(ePub),keys.e);
+            IdentityKeyPair ourKeys = new IdentityKeyPair(new IdentityKey(ePub), keys.e);
             byte[] nonce = new byte[12];
 
             Cipher cipher = Cipher.getInstance("AES/GCM-SIV/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keys.k, "AES"), new IvParameterSpec(nonce));
             byte[] ciphertext = cipher.doFinal(usmc.getSerialized());
-            LOG.fine("ENCRYPT, ciphertext length = "+ciphertext.length);
-            
+            LOG.fine("ENCRYPT, ciphertext length = " + ciphertext.length);
+
             for (int i = 0; i < count; i++) {
                 SignalProtocolAddress destination = destinations.get(i);
                 SessionRecord session = destinationSessions.get(i);
                 UUID theirUuid = UUID.fromString(destination.getName());
                 IdentityKey theirIdentity = signalProtocolStore.getIdentity(destination);
                 int theirRegistrationId = session.getRemoteRegistrationId();
-                if (theirRegistrationId > ((1 <<14) -1)) {
-                    throw new InvalidRegistrationIdException(destination, "remote registration id "+theirRegistrationId+" does not fit in 14 bits");
+                if (theirRegistrationId > ((1 << 14) - 1)) {
+                    throw new InvalidRegistrationIdException(destination, "remote registration id " + theirRegistrationId + " does not fit in 14 bits");
                 }
                 baos.writeBytes(uuidToBytes(theirUuid));
                 baos.write(varint(destination.getDeviceId()));
-                byte reghigh = (byte)(theirRegistrationId/256);
-                byte reglow = (byte)(theirRegistrationId%256);
+                byte reghigh = (byte) (theirRegistrationId / 256);
+                byte reglow = (byte) (theirRegistrationId % 256);
                 baos.write(reghigh);
                 baos.write(reglow);
                 byte[] c_i = apply_agreement_xor(ourKeys, theirIdentity.getPublicKey(), true, m);
@@ -347,12 +346,14 @@ public class SealedSessionCipher {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         int version = data[0];
         if (version >> 4 != SEALED_SENDER_V2_VERSION) {
-            throw new IllegalArgumentException("Invalid version "+version+" for multiRecipientMessages");
+            throw new IllegalArgumentException("Invalid version " + version + " for multiRecipientMessages");
         }
-        int cnt = (int)data[1];
-        if (cnt > 127) throw new IllegalArgumentException ("group limited to 127 currently");
+        int cnt = (int) data[1];
+        if (cnt > 127) {
+            throw new IllegalArgumentException("group limited to 127 currently");
+        }
         int idx = 2;
-        int LEN = MESSAGE_KEY_LEN+AUTH_TAG_LEN;
+        int LEN = MESSAGE_KEY_LEN + AUTH_TAG_LEN;
         List<byte[]> messages = new ArrayList<>(cnt);
         for (int i = 0; i < cnt; i++) {
             byte[] msg = new byte[LEN];
@@ -365,7 +366,7 @@ public class SealedSessionCipher {
         }
         int remaining = data.length - idx;
         int remstart = idx;
-        byte[] serialized = new byte[cnt*(1+LEN+remaining)];
+        byte[] serialized = new byte[cnt * (1 + LEN + remaining)];
         idx = 0;
         for (int i = 0; i < cnt; i++) {
             serialized[idx] = data[0];
@@ -409,9 +410,9 @@ public class SealedSessionCipher {
         }
     }
 
-    private byte[] decrypt(UnidentifiedSenderMessageContent message)  throws InvalidVersionException, 
-            InvalidMessageException, InvalidKeyException, DuplicateMessageException, 
-            InvalidKeyIdException, UntrustedIdentityException, LegacyMessageException, 
+    private byte[] decrypt(UnidentifiedSenderMessageContent message) throws InvalidVersionException,
+            InvalidMessageException, InvalidKeyException, DuplicateMessageException,
+            InvalidKeyIdException, UntrustedIdentityException, LegacyMessageException,
             NoSessionException {
         SenderCertificate senderCertificate = message.getSenderCertificate();
         SignalProtocolAddress sender = getPreferredAddress(signalProtocolStore, message.getSenderCertificate());
@@ -491,22 +492,23 @@ public class SealedSessionCipher {
 
     public static class DecryptionResult {
 
-        private final Optional<String> senderUuid;
+        private final String senderUuid;
         private final Optional<String> senderE164;
         private final int deviceId;
+        private final int messageType;
         private final Optional<byte[]> groupId;
         private final byte[] paddedMessage;
 
-        private DecryptionResult(Optional<String> senderUuid, Optional<String> senderE164,
-                int deviceId, Optional<byte[]> groupId, byte[] paddedMessage) {
+        private DecryptionResult(String senderUuid, Optional<String> senderE164, int deviceId, int messageType, Optional<byte[]> groupId, byte[] paddedMessage) {
             this.senderUuid = senderUuid;
             this.senderE164 = senderE164;
             this.deviceId = deviceId;
+            this.messageType = messageType;
             this.groupId = groupId;
             this.paddedMessage = paddedMessage;
         }
 
-        public Optional<String> getSenderUuid() {
+        public String getSenderUuid() {
             return senderUuid;
         }
 
@@ -516,6 +518,10 @@ public class SealedSessionCipher {
 
         public int getDeviceId() {
             return deviceId;
+        }
+
+        public int getCiphertextMessageType() {
+            return messageType;
         }
 
         public byte[] getPaddedMessage() {
@@ -625,10 +631,10 @@ public class SealedSessionCipher {
         DerivedKeys answer = new DerivedKeys(Curve.decodePrivatePoint(reduced), k);
         return answer;
     }
-    
+
     static byte[] computeAuthenticationTag(IdentityKeyPair ourKeys, IdentityKey theirKey, boolean direction,
             ECPublicKey ephemeralPubKey, byte[] encryptedMessageKey) throws InvalidKeyException {
-      
+
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte[] agreement = Curve.calculateAgreement(theirKey.getPublicKey(), ourKeys.getPrivateKey());
@@ -641,43 +647,43 @@ public class SealedSessionCipher {
             } else {
                 baos.write(theirKey.getPublicKey().serialize());
                 baos.write(ourKeys.getPublicKey().serialize());
-            } HKDF hkdf = HKDFv3.createFor(3);
-        byte[] secrets = hkdf.deriveSecrets(baos.toByteArray(), LABEL_DH_S.getBytes(), AUTH_TAG_LEN);
+            }
+            HKDF hkdf = HKDFv3.createFor(3);
+            byte[] secrets = hkdf.deriveSecrets(baos.toByteArray(), LABEL_DH_S.getBytes(), AUTH_TAG_LEN);
 
-
-        return secrets;
+            return secrets;
         } catch (IOException ex) {
             ex.printStackTrace();
         }
-      return null;
+        return null;
     }
-    
-  static byte[] uuidToBytes(UUID uuid) {
-    ByteBuffer bb = ByteBuffer.wrap(new byte[16]);
-    bb.putLong(uuid.getMostSignificantBits());
-    bb.putLong(uuid.getLeastSignificantBits());
-    return bb.array();
-  }
-  
-  static byte[] varint(int src) {
-      int len = 1;
-      int tmp = src;
-      while (tmp > 127) {
-          tmp >>>= 7;
-          len++;
-      }
-      byte[] answer = new byte[len];
-      tmp = src;
-      int i = 0;
-      while (i < len -1) {
-          answer[i] = (byte)((tmp & 127) | 128);
-          tmp >>>= 7;
-          i++;
-      }
-      answer[i] = (byte)tmp;
-      return answer;
-  }
-  
+
+    static byte[] uuidToBytes(UUID uuid) {
+        ByteBuffer bb = ByteBuffer.wrap(new byte[16]);
+        bb.putLong(uuid.getMostSignificantBits());
+        bb.putLong(uuid.getLeastSignificantBits());
+        return bb.array();
+    }
+
+    static byte[] varint(int src) {
+        int len = 1;
+        int tmp = src;
+        while (tmp > 127) {
+            tmp >>>= 7;
+            len++;
+        }
+        byte[] answer = new byte[len];
+        tmp = src;
+        int i = 0;
+        while (i < len - 1) {
+            answer[i] = (byte) ((tmp & 127) | 128);
+            tmp >>>= 7;
+            i++;
+        }
+        answer[i] = (byte) tmp;
+        return answer;
+    }
+
     static class DerivedKeys {
 
         ECPrivateKey e;
