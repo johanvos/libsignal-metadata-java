@@ -48,6 +48,7 @@ import org.whispersystems.libsignal.util.Pair;
 
 import java.util.UUID;
 import org.signal.libsignal.metadata.protocol.UnidentifiedSenderMessageContent;
+import org.whispersystems.libsignal.InvalidVersionException;
 import org.whispersystems.libsignal.groups.GroupCipher;
 import org.whispersystems.libsignal.groups.GroupSessionBuilder;
 import org.whispersystems.libsignal.protocol.CiphertextMessage;
@@ -161,7 +162,7 @@ public class SealedSessionCipherTest extends TestCase {
         }
     }
 
-    public void testEncryptDecryptGroup() throws UntrustedIdentityException, InvalidKeyException, InvalidCertificateException, InvalidMessageException, InvalidMetadataMessageException, LegacyMessageException, NoSessionException, ProtocolDuplicateMessageException, ProtocolUntrustedIdentityException, ProtocolLegacyMessageException, ProtocolInvalidKeyException, InvalidMetadataVersionException, ProtocolInvalidVersionException, ProtocolInvalidMessageException, ProtocolInvalidKeyIdException, ProtocolNoSessionException, SelfSendException, InvalidProtocolBufferException, InvalidRegistrationIdException {
+    public void testEncryptDecryptGroup() throws UntrustedIdentityException, InvalidKeyException, InvalidCertificateException, InvalidMessageException, InvalidMetadataMessageException, LegacyMessageException, NoSessionException, ProtocolDuplicateMessageException, ProtocolUntrustedIdentityException, ProtocolLegacyMessageException, ProtocolInvalidKeyException, InvalidMetadataVersionException, ProtocolInvalidVersionException, ProtocolInvalidMessageException, ProtocolInvalidKeyIdException, ProtocolNoSessionException, SelfSendException, InvalidProtocolBufferException, InvalidRegistrationIdException, InvalidVersionException {
         TestInMemorySignalProtocolStore aliceStore = new TestInMemorySignalProtocolStore();
         TestInMemorySignalProtocolStore bobStore = new TestInMemorySignalProtocolStore();
         SignalProtocolAddress bobAddress = new SignalProtocolAddress("e80f7bbe-5b94-471e-bd8c-2173654ea3d1", 1);
